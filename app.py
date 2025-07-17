@@ -18,7 +18,7 @@ st.title("🎓 Sistema de Consulta de Formularios - Matrícula Cero 2025-2")
 # Configuración de bases de datos
 LOGIN_DB_CONFIG = {
     'host': '10.124.80.4',
-    'user': 'root',
+    'user': 'REDACTED',
     'password': 'REDACTED',
     'database': 'analitica_fondos',
     'port': 3306
@@ -26,7 +26,7 @@ LOGIN_DB_CONFIG = {
 
 APP_DB_CONFIG = {
     'host': '10.124.80.4',
-    'user': 'root',
+    'user': 'REDACTED',
     'password': 'REDACTED',
     'database': 'REDACTED',
     'port': 3306
