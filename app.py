@@ -143,7 +143,7 @@ def autenticar_usuario(username: str, password: str) -> bool:
 
 
 # Gestión de cookies para mantener la sesión
-@st.cache_resource
+@st.cache_resource(experimental_allow_widgets=True)
 def get_cookie_manager():
     """Retorna un manejador de cookies para la sesión actual"""
     return stx.CookieManager()
@@ -534,16 +534,15 @@ def mostrar_formulario_consulta():
 
 # Punto de entrada de la aplicación
 if __name__ == "__main__":
-    # Mostrar el componente de gestión de cookies (oculto)
-    cookie_manager = get_cookie_manager()
-    cookie_manager.get_all()
-    
-    # Verificar si existe una sesión en cookies
-    sesion_valida = verificar_cookie_sesion()
-    
     # Inicializar estado de sesión si no existe
     if 'autenticado' not in st.session_state:
         st.session_state.autenticado = False
+    
+    # Acceder al componente de cookies con permitiendo widgets explícitamente
+    cookie_manager = get_cookie_manager()
+    
+    # Verificar si existe una sesión en cookies
+    sesion_valida = verificar_cookie_sesion()
     
     # Mostrar contenido según autenticación
     if st.session_state.autenticado or sesion_valida:
