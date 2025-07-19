@@ -4,6 +4,10 @@ import hashlib
 import secrets
 import pandas as pd
 from typing import Optional
+import extra_streamlit_components as stx
+import datetime
+import json
+import base64
 
 # Configuración de la página
 st.set_page_config(
@@ -137,6 +141,66 @@ def autenticar_usuario(username: str, password: str) -> bool:
         st.error(f"Error de autenticación: {str(e)}")
         return False
 
+
+# Gestión de cookies para mantener la sesión
+@st.cache_resource
+def get_cookie_manager():
+    """Retorna un manejador de cookies para la sesión actual"""
+    return stx.CookieManager()
+
+def establecer_cookie_sesion(username: str, user_info: dict):
+    """Establece una cookie segura para mantener la sesión activa"""
+    cookie_manager = get_cookie_manager()
+    
+    # Creamos un payload con la información de la sesión
+    payload = {
+        "username": username,
+        "user_info": user_info,
+        "expiry": (datetime.datetime.now() + datetime.timedelta(days=1)).isoformat()
+    }
+    
+    # Codificamos el payload
+    payload_encoded = base64.b64encode(json.dumps(payload).encode()).decode()
+    
+    # Guardamos la cookie con una duración de 1 día
+    cookie_manager.set("session_data", payload_encoded, expires_at=datetime.datetime.now() + datetime.timedelta(days=1))
+
+def verificar_cookie_sesion():
+    """Verifica si existe una cookie de sesión válida y restaura el estado de la sesión"""
+    if 'autenticado' in st.session_state and st.session_state.autenticado:
+        return True  # Ya está autenticado en la sesión actual
+    
+    cookie_manager = get_cookie_manager()
+    session_cookie = cookie_manager.get("session_data")
+    
+    if not session_cookie:
+        return False
+    
+    try:
+        # Decodificar la cookie
+        payload = json.loads(base64.b64decode(session_cookie).decode())
+        
+        # Verificar si la cookie no ha expirado
+        expiry = datetime.datetime.fromisoformat(payload["expiry"])
+        if datetime.datetime.now() > expiry:
+            cookie_manager.delete("session_data")
+            return False
+        
+        # Restaurar el estado de la sesión
+        st.session_state.autenticado = True
+        st.session_state.username = payload["username"]
+        st.session_state.user_info = payload["user_info"]
+        return True
+        
+    except Exception as e:
+        st.error(f"Error al verificar la sesión: {e}")
+        cookie_manager.delete("session_data")
+        return False
+
+def eliminar_cookie_sesion():
+    """Elimina la cookie de sesión"""
+    cookie_manager = get_cookie_manager()
+    cookie_manager.delete("session_data")
 
 # Funciones de gestión de usuarios
 def obtener_info_usuario(username: str):
@@ -273,6 +337,7 @@ def mostrar_formulario_login():
         st.markdown("## 🔐 Inicio de Sesión")
         username = st.text_input("Usuario", key="login_username")
         password = st.text_input("Contraseña", type="password", key="login_password")
+        remember_me = st.checkbox("Mantener sesión iniciada", value=True, help="Mantener la sesión activa incluso si cierras el navegador")
         submit_button = st.form_submit_button("Iniciar Sesión")
 
         if submit_button:
@@ -281,9 +346,15 @@ def mostrar_formulario_login():
                 return
 
             if autenticar_usuario(username, password):
+                user_info = obtener_info_usuario(username)
                 st.session_state.autenticado = True
                 st.session_state.username = username
-                st.session_state.user_info = obtener_info_usuario(username)
+                st.session_state.user_info = user_info
+                
+                # Si está marcada la opción "Mantener sesión iniciada", crear la cookie
+                if remember_me:
+                    establecer_cookie_sesion(username, user_info)
+                
                 st.success("¡Inicio de sesión exitoso!")
                 st.rerun()
             else:
@@ -363,9 +434,13 @@ def mostrar_interfaz_principal():
         mostrar_formulario_registro()
     elif opcion == "Cerrar sesión":
         if st.button("Confirmar cierre de sesión"):
-            del st.session_state.autenticado
-            del st.session_state.username
-            del st.session_state.user_info
+            # Eliminar la cookie de sesión
+            eliminar_cookie_sesion()
+            
+            # Limpiar el estado de la sesión
+            if 'autenticado' in st.session_state: del st.session_state.autenticado
+            if 'username' in st.session_state: del st.session_state.username
+            if 'user_info' in st.session_state: del st.session_state.user_info
             st.rerun()
 
 
@@ -459,12 +534,19 @@ def mostrar_formulario_consulta():
 
 # Punto de entrada de la aplicación
 if __name__ == "__main__":
-    # Inicializar estado de sesión
+    # Mostrar el componente de gestión de cookies (oculto)
+    cookie_manager = get_cookie_manager()
+    cookie_manager.get_all()
+    
+    # Verificar si existe una sesión en cookies
+    sesion_valida = verificar_cookie_sesion()
+    
+    # Inicializar estado de sesión si no existe
     if 'autenticado' not in st.session_state:
         st.session_state.autenticado = False
-
+    
     # Mostrar contenido según autenticación
-    if st.session_state.autenticado:
+    if st.session_state.autenticado or sesion_valida:
         mostrar_interfaz_principal()
     else:
         mostrar_formulario_login()
