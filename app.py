@@ -38,7 +38,7 @@ APP_DB_CONFIG = {
 def init_login_connection():
     try:
         connection_string = f"mysql+mysqlconnector://{LOGIN_DB_CONFIG['user']}:{LOGIN_DB_CONFIG['password']}@{LOGIN_DB_CONFIG['host']}:{LOGIN_DB_CONFIG['port']}/{LOGIN_DB_CONFIG['database']}"
-        engine = create_engine(connection_string)
+        engine = create_engine(connection_string, pool_pre_ping=True)
         return engine
     except Exception as e:
         st.error(f"Error al conectar con la base de datos de autenticación: {e}")
@@ -50,7 +50,7 @@ def init_login_connection():
 def init_app_connection():
     try:
         connection_string = f"mysql+mysqlconnector://{APP_DB_CONFIG['user']}:{APP_DB_CONFIG['password']}@{APP_DB_CONFIG['host']}:{APP_DB_CONFIG['port']}/{APP_DB_CONFIG['database']}"
-        engine = create_engine(connection_string)
+        engine = create_engine(connection_string, pool_pre_ping=True)
         return engine
     except Exception as e:
         st.error(f"Error al conectar con la base de datos de aplicación: {e}")
@@ -371,16 +371,7 @@ def mostrar_interfaz_principal():
 
 def mostrar_formulario_consulta():
     """Muestra el formulario de consulta principal"""
-    st.markdown("### 📚 Sobre el Programa Matrícula Cero")
-    st.markdown("""
-    **Matrícula Cero** es un programa de Sapiencia.
 
-    **¿Qué puedes consultar aquí?**
-    - Si el estudiante realizó satisfactoriamente el proceso de registro del formulario de matrícula ceros
-    - Información personal y académica
-    - Columnas importantes
-    - Datos de contacto registrados
-    """)
 
     # Input para el documento
     documento_input = st.text_input(
