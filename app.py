@@ -474,7 +474,7 @@ def mostrar_formulario_consulta():
                             f"✅ ¡Registro encontrado! Se encontraron {len(resultado)} registro(s) para su documento.")
 
                         columnas_a_mostrar = resultado.columns[:6]
-                        df_mostrar = resultado[[*columnas_a_mostrar, "ies_adscritas", "programa_admitido"]]
+                        df_mostrar = resultado[[*columnas_a_mostrar, "fecha_registro", "Estado_Formulario", "ies_adscritas", "programa_admitido"]]
 
                         st.info(
                             f"📊 Mostrando las primeras {len(columnas_a_mostrar)} columnas de {len(resultado.columns)} columnas disponibles")
