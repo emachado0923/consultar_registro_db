@@ -10,7 +10,15 @@ steps:
   # Deploy container image to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk' 
     entrypoint: gcloud 
-    args: ['run', 'deploy', '$_SERVICE_NAME', '--image', 'us-central1-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY_NAME/$_IMAGE_NAME', '--region', 'us-central1','--port','8000']
+    args: [
+      'run', 
+      'deploy', 
+      '$_SERVICE_NAME', 
+      '--image', 'us-central1-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY_NAME/$_IMAGE_NAME', 
+      '--region', 'us-central1', 
+      '--port', '$_PORT',
+      '--allow-unauthenticated'
+    ]
 
 substitutions:
   _SERVICE_NAME: consultar-registro-reflex
