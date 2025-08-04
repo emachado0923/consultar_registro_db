@@ -24,7 +24,7 @@ substitutions:
   _SERVICE_NAME: consultar-registro-reflex
   _REPOSITORY_NAME: consultar-registro-app
   _IMAGE_NAME: consultar-registro-reflex
-  _PORT: '8000'
+  _PORT: '3000'
 
 images:
   - 'us-central1-docker.pkg.dev/$PROJECT_ID/$_REPOSITORY_NAME/$_IMAGE_NAME'

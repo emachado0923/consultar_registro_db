@@ -2,21 +2,18 @@ FROM python:3.9-slim
 
 WORKDIR /app
 
-# Copy requirements first for better caching
-COPY requirements.txt .
+# Instala dependencias primero para aprovechar la cache
+COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application
+# Copia el resto de la app
 COPY . .
 
-# Build the Reflex app
-RUN python -m reflex init
+# Build Reflex en modo producción
+RUN reflex export --frontend-only
 
-# Generate production build
-RUN python -m reflex build --frontend-only
+# Expone el puerto por defecto de Reflex (3000)
+EXPOSE 3000
 
-# Expose the port Reflex runs on
-EXPOSE 8000
-
-# Start the Reflex application in production mode
-ENTRYPOINT ["python", "-m", "reflex", "run", "--env", "prod"]
+# Comando de arranque en producción
+CMD ["reflex", "run", "--env", "prod"]
