@@ -1,14 +1,19 @@
 FROM python:3.9-slim
 
-
 WORKDIR /app
 
-COPY app.py /app/
-COPY requirements.txt /app/
+# Copy application files
+COPY . /app/
 
-# Acá se importan las librerías del archivo requirements.txt
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-#Puerto
-EXPOSE 8501
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# Build the Reflex app
+RUN reflex init
+RUN reflex export --no-frontend
+
+# Expose the port Reflex runs on
+EXPOSE 8000
+
+# Start the Reflex application
+CMD ["reflex", "run", "--env", "prod", "--backend-only"]
