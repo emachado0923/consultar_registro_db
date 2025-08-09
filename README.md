@@ -10,13 +10,13 @@ API REST con FastAPI para autenticar usuarios y consultar registros por document
 - POST /auth/register: body { username, full_name, password } (Bearer admin).
 - GET /consulta?documento=XXXXXXXX (Bearer): consulta en vista vw_matricula_cero_2025_2.
 
-## Variables de entorno requeridas
+## Variables de entorno y defaults
 
-Debe suministrarlas en Cloud Run (o localmente):
+La app ahora soporta archivo `.env` (vía `python-dotenv`). Si no define variables, usará valores por defecto "quemados" en el código. Para personalizar, copie `.env.example` a `.env` y edite:
 
 - LOGIN_DB_HOST, LOGIN_DB_USER, LOGIN_DB_PASSWORD, LOGIN_DB_DATABASE, LOGIN_DB_PORT (opcional)
 - APP_DB_HOST, APP_DB_USER, APP_DB_PASSWORD, APP_DB_DATABASE, APP_DB_PORT (opcional)
-- JWT_SECRET (se recomienda cambiarlo en producción)
+- JWT_SECRET (cámbielo en producción)
 
 ## Desarrollo local
 
@@ -27,7 +27,10 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-2) Exportar variables de entorno (PowerShell)
+2) Opcional: usar `.env`
+	- Copie `.env.example` a `.env` y ajuste valores. Si omite este paso, se usarán los defaults del código.
+
+	O bien exporte variables de entorno (PowerShell):
 ```pwsh
 $env:LOGIN_DB_HOST="localhost"
 $env:LOGIN_DB_USER="user"

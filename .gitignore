@@ -1,0 +1,9 @@
+# Entornos
+.venv/
+__pycache__/
+
+# Archivos locales
+.env
+*
+!.gitignore
+!.env.example
