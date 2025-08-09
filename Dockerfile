@@ -8,10 +8,10 @@ WORKDIR /app
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py /app/
+COPY app.py /app/
 
 # Cloud Run establece PORT; uvicorn debe respetarlo
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT}"]
