@@ -1,18 +1,20 @@
 FROM python:3.11-slim
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-	PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1
 
+# Establece el directorio de trabajo
 WORKDIR /app
 
-COPY requirements.txt /app/
+# Copia todo el proyecto al directorio de trabajo
+COPY . .
+
+# Instala las dependencias
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY app.py /app/
-COPY api/ /app/api/
-
-# Cloud Run establece PORT; uvicorn debe respetarlo
-ENV PORT=8080
+# Expone el puerto que usará la aplicación
 EXPOSE 8080
 
-CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT}"]
+# Comando para ejecutar la aplicación
+# Cloud Run usará la variable de entorno PORT
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8080}"]
