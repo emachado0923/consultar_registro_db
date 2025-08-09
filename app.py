@@ -2,12 +2,14 @@ from datetime import datetime, timedelta
 import hashlib
 import os
 from typing import Any, Dict, List, Optional
+from urllib.parse import quote_plus
 
 import jwt
 from fastapi import Depends, FastAPI, HTTPException, Request, status, Query
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, Field
 from sqlalchemy import create_engine, text
+from dotenv import load_dotenv
 
 
 # =========================
@@ -16,28 +18,56 @@ from sqlalchemy import create_engine, text
 
 APP_TITLE = "API de Consulta de Registros - Matrícula Cero 2025-2"
 
+# Cargar variables desde .env (si existe)
+load_dotenv()
+
 JWT_SECRET = os.getenv("JWT_SECRET", "change-me")
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRES_HOURS = int(os.getenv("JWT_EXPIRES_HOURS", "24"))
 
 
-def _build_mysql_url(prefix: str) -> Optional[str]:
-    host = os.getenv(f"{prefix}_HOST")
-    user = os.getenv(f"{prefix}_USER")
-    password = os.getenv(f"{prefix}_PASSWORD")
-    database = os.getenv(f"{prefix}_DATABASE")
-    port = os.getenv(f"{prefix}_PORT", "3306")
+# Valores por defecto ("quemados"). Se pueden sobreescribir por .env/variables de entorno.
+DEFAULT_LOGIN_DB = {
+    "HOST": "10.124.80.4",
+    "USER": "REDACTED",
+    "PASSWORD": "REDACTED",
+    "DATABASE": "analitica_fondos",
+    "PORT": "3306",
+}
 
-    if not all([host, user, password, database]):
-        return None
-    return f"mysql+mysqlconnector://{user}:{password}@{host}:{port}/{database}"
+DEFAULT_APP_DB = {
+    "HOST": "10.124.80.4",
+    "USER": "REDACTED",
+    "PASSWORD": "REDACTED",
+    "DATABASE": "REDACTED",
+    "PORT": "3306",
+}
 
 
-LOGIN_DB_URL = _build_mysql_url("LOGIN_DB")
-APP_DB_URL = _build_mysql_url("APP_DB")
+def _build_mysql_url(prefix: str, defaults: Dict[str, str]) -> str:
+    """Construye la URL de conexión a MySQL usando env con fallback a defaults.
 
-login_engine = create_engine(LOGIN_DB_URL, pool_pre_ping=True) if LOGIN_DB_URL else None
-app_engine = create_engine(APP_DB_URL, pool_pre_ping=True) if APP_DB_URL else None
+    Prefijo esperado, por ejemplo: LOGIN_DB o APP_DB.
+    Variables soportadas: {PREFIX}_{HOST,USER,PASSWORD,DATABASE,PORT}
+    """
+    host = os.getenv(f"{prefix}_HOST", defaults["HOST"]).strip()
+    user = os.getenv(f"{prefix}_USER", defaults["USER"]).strip()
+    password = os.getenv(f"{prefix}_PASSWORD", defaults["PASSWORD"]).strip()
+    database = os.getenv(f"{prefix}_DATABASE", defaults["DATABASE"]).strip()
+    port = os.getenv(f"{prefix}_PORT", defaults.get("PORT", "3306")).strip()
+
+    # Asegurar que usuario/contraseña estén codificados para URL
+    user_q = quote_plus(user)
+    pass_q = quote_plus(password)
+
+    return f"mysql+mysqlconnector://{user_q}:{pass_q}@{host}:{port}/{database}"
+
+
+LOGIN_DB_URL = _build_mysql_url("LOGIN_DB", DEFAULT_LOGIN_DB)
+APP_DB_URL = _build_mysql_url("APP_DB", DEFAULT_APP_DB)
+
+login_engine = create_engine(LOGIN_DB_URL, pool_pre_ping=True)
+app_engine = create_engine(APP_DB_URL, pool_pre_ping=True)
 
 
 def hash_password_with_salt(password: str, salt: Optional[str] = None) -> Dict[str, str]:
@@ -109,12 +139,14 @@ auth_scheme = HTTPBearer(auto_error=False)
 
 
 def require_db_engines():
+    # Con defaults "quemados" y overrides por env, los engines siempre deberían existir.
+    # Esta validación se mantiene por si en el futuro se cambia el flujo de inicialización.
     if not login_engine or not app_engine:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=(
-                "Configuración de base de datos faltante. Defina variables de entorno "
-                "LOGIN_DB_{HOST,USER,PASSWORD,DATABASE} y APP_DB_{HOST,USER,PASSWORD,DATABASE}."
+                "No se pudieron inicializar los engines de base de datos. "
+                "Verifique variables LOGIN_DB_* y APP_DB_* o los valores por defecto."
             ),
         )
 
