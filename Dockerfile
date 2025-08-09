@@ -1,14 +1,17 @@
-FROM python:3.9-slim
+FROM python:3.11-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+	PYTHONUNBUFFERED=1
 
 WORKDIR /app
 
-COPY app.py /app/
 COPY requirements.txt /app/
-
-# Acá se importan las librerías del archivo requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
-#Puerto
-EXPOSE 8501
-CMD ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+COPY app.py /app/
+
+# Cloud Run establece PORT; uvicorn debe respetarlo
+ENV PORT=8080
+EXPOSE 8080
+
+CMD ["sh", "-c", "uvicorn app:app --host 0.0.0.0 --port ${PORT}"]
