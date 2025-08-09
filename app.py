@@ -1,551 +1,230 @@
-import streamlit as st
-from sqlalchemy import create_engine, text
+from datetime import datetime, timedelta
 import hashlib
-import secrets
-import pandas as pd
-from typing import Optional
-import extra_streamlit_components as stx
-import datetime
-import json
-import base64
+import os
+from typing import Any, Dict, List, Optional
 
-# Configuración de la página
-st.set_page_config(
-    page_title="Consulta de Registros DB",
-    page_icon="🔍",
-    layout="wide"
-)
-
-# Título de la aplicación
-st.title("🎓 Sistema de Consulta de Formularios - Matrícula Cero 2025-2")
-
-# Configuración de bases de datos
-LOGIN_DB_CONFIG = {
-    'host': '10.124.80.4',
-    'user': 'REDACTED',
-    'password': 'REDACTED',
-    'database': 'analitica_fondos',
-    'port': 3306
-}
-
-APP_DB_CONFIG = {
-    'host': '10.124.80.4',
-    'user': 'REDACTED',
-    'password': 'REDACTED',
-    'database': 'REDACTED',
-    'port': 3306
-}
+import jwt
+from fastapi import Depends, FastAPI, HTTPException, Request, status, Query
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, Field
+from sqlalchemy import create_engine, text
 
 
-# Conexión a la base de datos de login
-@st.cache_resource
-def init_login_connection():
-    try:
-        connection_string = f"mysql+mysqlconnector://{LOGIN_DB_CONFIG['user']}:{LOGIN_DB_CONFIG['password']}@{LOGIN_DB_CONFIG['host']}:{LOGIN_DB_CONFIG['port']}/{LOGIN_DB_CONFIG['database']}"
-        engine = create_engine(connection_string, pool_pre_ping=True)
-        return engine
-    except Exception as e:
-        st.error(f"Error al conectar con la base de datos de autenticación: {e}")
+# =========================
+# Configuración y utilidades
+# =========================
+
+APP_TITLE = "API de Consulta de Registros - Matrícula Cero 2025-2"
+
+JWT_SECRET = os.getenv("JWT_SECRET", "change-me")
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRES_HOURS = int(os.getenv("JWT_EXPIRES_HOURS", "24"))
+
+
+def _build_mysql_url(prefix: str) -> Optional[str]:
+    host = os.getenv(f"{prefix}_HOST")
+    user = os.getenv(f"{prefix}_USER")
+    password = os.getenv(f"{prefix}_PASSWORD")
+    database = os.getenv(f"{prefix}_DATABASE")
+    port = os.getenv(f"{prefix}_PORT", "3306")
+
+    if not all([host, user, password, database]):
         return None
+    return f"mysql+mysqlconnector://{user}:{password}@{host}:{port}/{database}"
 
 
-# Conexión a la base de datos de aplicación
-@st.cache_resource
-def init_app_connection():
+LOGIN_DB_URL = _build_mysql_url("LOGIN_DB")
+APP_DB_URL = _build_mysql_url("APP_DB")
+
+login_engine = create_engine(LOGIN_DB_URL, pool_pre_ping=True) if LOGIN_DB_URL else None
+app_engine = create_engine(APP_DB_URL, pool_pre_ping=True) if APP_DB_URL else None
+
+
+def hash_password_with_salt(password: str, salt: Optional[str] = None) -> Dict[str, str]:
+    if salt is None:
+        # 32 hex chars = 16 bytes
+        salt = os.urandom(16).hex()
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt.encode("utf-8"), 100000)
+    return {"salt": salt, "hash": dk.hex()}
+
+
+def verify_password(salt: str, stored_hash: str, provided_password: str) -> bool:
+    calc = hash_password_with_salt(provided_password, salt)["hash"]
+    return calc == stored_hash
+
+
+def create_token(payload: Dict[str, Any]) -> str:
+    to_encode = payload.copy()
+    to_encode.update({"exp": datetime.utcnow() + timedelta(hours=JWT_EXPIRES_HOURS)})
+    return jwt.encode(to_encode, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+
+def decode_token(token: str) -> Dict[str, Any]:
     try:
-        connection_string = f"mysql+mysqlconnector://{APP_DB_CONFIG['user']}:{APP_DB_CONFIG['password']}@{APP_DB_CONFIG['host']}:{APP_DB_CONFIG['port']}/{APP_DB_CONFIG['database']}"
-        engine = create_engine(connection_string, pool_pre_ping=True)
-        return engine
-    except Exception as e:
-        st.error(f"Error al conectar con la base de datos de aplicación: {e}")
-        return None
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token expirado")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Token inválido")
 
 
-# Funciones de seguridad mejoradas
-def crear_hash_con_sal(password: str) -> tuple:
-    """Crea un hash seguro de la contraseña con sal"""
-    try:
-        sal = secrets.token_hex(16)
-        hash_obj = hashlib.pbkdf2_hmac(
-            'sha256',
-            password.encode('utf-8'),
-            sal.encode('utf-8'),
-            100000
+# =========================
+# Modelos de request/response
+# =========================
+
+
+class LoginRequest(BaseModel):
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: Dict[str, Any]
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(min_length=1)
+    new_password: str = Field(min_length=8)
+
+
+class RegisterUserRequest(BaseModel):
+    username: str = Field(min_length=3)
+    full_name: str = Field(min_length=1)
+    password: str = Field(min_length=8)
+
+
+class ConsultaResponse(BaseModel):
+    count: int
+    results: List[Dict[str, Any]]
+
+
+# =========================
+# App y seguridad
+# =========================
+
+app = FastAPI(title=APP_TITLE)
+auth_scheme = HTTPBearer(auto_error=False)
+
+
+def require_db_engines():
+    if not login_engine or not app_engine:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=(
+                "Configuración de base de datos faltante. Defina variables de entorno "
+                "LOGIN_DB_{HOST,USER,PASSWORD,DATABASE} y APP_DB_{HOST,USER,PASSWORD,DATABASE}."
+            ),
         )
-        return sal, hash_obj.hex()
-    except Exception as e:
-        st.error(f"Error al crear hash: {str(e)}")
-        return None, None
 
 
-def verificar_password(sal: str, hash_almacenado: str, password_proporcionado: str) -> bool:
-    """Verifica si el password proporcionado coincide con el hash almacenado"""
-    try:
-        if not all([sal, hash_almacenado, password_proporcionado]):
-            return False
-
-        hash_calculado = hashlib.pbkdf2_hmac(
-            'sha256',
-            password_proporcionado.encode('utf-8'),
-            sal.encode('utf-8'),
-            100000
-        ).hex()
-
-        return hash_calculado == hash_almacenado
-    except Exception as e:
-        st.error(f"Error al verificar contraseña: {str(e)}")
-        return False
+def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depends(auth_scheme)) -> Dict[str, Any]:
+    if credentials is None or credentials.scheme.lower() != "bearer":
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Falta token Bearer")
+    token = credentials.credentials
+    data = decode_token(token)
+    return data
 
 
-# Función de autenticación corregida
-def autenticar_usuario(username: str, password: str) -> bool:
-    """Autentica un usuario contra la base de datos"""
-    engine = init_login_connection()
-    if engine is None:
-        st.error("No se pudo conectar a la base de datos")
-        return False
-
-    try:
-        query = text("""
-            SELECT password_hash, sal, activo 
-            FROM usuarios 
-            WHERE username = :username
-        """)
-
-        with engine.connect() as connection:
-            result = connection.execute(query, {"username": username}).fetchone()
-
-        if not result:
-            st.error("Usuario no encontrado")
-            return False
-
-        hash_almacenado = result[0]
-        sal = result[1]
-        activo = bool(result[2])
-
-        if not activo:
-            st.error("Esta cuenta está desactivada")
-            return False
-
-        if not all([hash_almacenado, sal]):
-            st.error("Credenciales inválidas en la base de datos")
-            return False
-
-        if verificar_password(sal, hash_almacenado, password):
-            return True
-
-        st.error("Contraseña incorrecta")
-        return False
-
-    except Exception as e:
-        st.error(f"Error de autenticación: {str(e)}")
-        return False
+def require_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
+    # Regla simple: admin si username == 'admin'
+    if user.get("username") != "admin":
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
+    return user
 
 
-# Gestión de cookies para mantener la sesión
-@st.cache_resource(experimental_allow_widgets=True)
-def get_cookie_manager():
-    """Retorna un manejador de cookies para la sesión actual"""
-    return stx.CookieManager()
-
-def establecer_cookie_sesion(username: str, user_info: dict):
-    """Establece una cookie segura para mantener la sesión activa"""
-    cookie_manager = get_cookie_manager()
-    
-    # Creamos un payload con la información de la sesión
-    payload = {
-        "username": username,
-        "user_info": user_info,
-        "expiry": (datetime.datetime.now() + datetime.timedelta(days=1)).isoformat()
-    }
-    
-    # Codificamos el payload
-    payload_encoded = base64.b64encode(json.dumps(payload).encode()).decode()
-    
-    # Guardamos la cookie con una duración de 1 día
-    cookie_manager.set("session_data", payload_encoded, expires_at=datetime.datetime.now() + datetime.timedelta(days=1))
-
-def verificar_cookie_sesion():
-    """Verifica si existe una cookie de sesión válida y restaura el estado de la sesión"""
-    if 'autenticado' in st.session_state and st.session_state.autenticado:
-        return True  # Ya está autenticado en la sesión actual
-    
-    cookie_manager = get_cookie_manager()
-    session_cookie = cookie_manager.get("session_data")
-    
-    if not session_cookie:
-        return False
-    
-    try:
-        # Decodificar la cookie
-        payload = json.loads(base64.b64decode(session_cookie).decode())
-        
-        # Verificar si la cookie no ha expirado
-        expiry = datetime.datetime.fromisoformat(payload["expiry"])
-        if datetime.datetime.now() > expiry:
-            cookie_manager.delete("session_data")
-            return False
-        
-        # Restaurar el estado de la sesión
-        st.session_state.autenticado = True
-        st.session_state.username = payload["username"]
-        st.session_state.user_info = payload["user_info"]
-        return True
-        
-    except Exception as e:
-        st.error(f"Error al verificar la sesión: {e}")
-        cookie_manager.delete("session_data")
-        return False
-
-def eliminar_cookie_sesion():
-    """Elimina la cookie de sesión"""
-    cookie_manager = get_cookie_manager()
-    cookie_manager.delete("session_data")
-
-# Funciones de gestión de usuarios
-def obtener_info_usuario(username: str):
-    """Obtiene información del usuario"""
-    engine = init_login_connection()
-    if engine is None:
-        return None
-
-    try:
-        query = text("SELECT id, nombre_completo FROM usuarios WHERE username = :username")
-        with engine.connect() as connection:
-            result = connection.execute(query, {"username": username}).fetchone()
-        return {'id': result[0], 'nombre_completo': result[1]} if result else None
-    except Exception as e:
-        st.error(f"Error al obtener información del usuario: {e}")
-        return None
+# =========================
+# Endpoints
+# =========================
 
 
-def cambiar_password(username: str, password_actual: str, nuevo_password: str) -> bool:
-    """Cambia la contraseña de un usuario"""
-    engine = init_login_connection()
-    if engine is None:
-        return False
-
-    try:
-        with engine.connect() as connection:
-            # Verificar contraseña actual
-            result = connection.execute(
-                text("SELECT password_hash, sal FROM usuarios WHERE username = :username"),
-                {"username": username}
-            ).fetchone()
-
-            if not result:
-                st.error("Usuario no encontrado")
-                return False
-
-            hash_almacenado, sal = result[0], result[1]
-
-            if not verificar_password(sal, hash_almacenado, password_actual):
-                st.error("La contraseña actual es incorrecta")
-                return False
-
-            # Generar nuevo hash
-            nueva_sal, nuevo_hash = crear_hash_con_sal(nuevo_password)
-            if not nueva_sal or not nuevo_hash:
-                return False
-
-            # Actualizar en base de datos
-            connection.execute(
-                text("""
-                    UPDATE usuarios 
-                    SET password_hash = :nuevo_hash, sal = :nueva_sal
-                    WHERE username = :username
-                """),
-                {
-                    "nuevo_hash": nuevo_hash,
-                    "nueva_sal": nueva_sal,
-                    "username": username
-                }
-            )
-            connection.commit()
-        st.success("¡Contraseña cambiada exitosamente!")
-        return True
-    except Exception as e:
-        st.error(f"Error al cambiar contraseña: {e}")
-        return False
+@app.get("/healthz")
+def healthz():
+    return {"status": "ok", "service": APP_TITLE}
 
 
-def crear_usuario(username: str, password: str, nombre_completo: str) -> bool:
-    """Crea un nuevo usuario en el sistema"""
-    engine = init_login_connection()
-    if engine is None:
-        return False
-
-    try:
-        with engine.connect() as connection:
-            # Verificar si el usuario ya existe
-            existe = connection.execute(
-                text("SELECT COUNT(*) FROM usuarios WHERE username = :username"),
-                {"username": username}
-            ).scalar()
-
-            if existe:
-                st.error("El nombre de usuario ya existe")
-                return False
-
-            # Crear hash de contraseña
-            sal, password_hash = crear_hash_con_sal(password)
-            if not sal or not password_hash:
-                return False
-
-            # Insertar nuevo usuario
-            connection.execute(
-                text("""
-                    INSERT INTO usuarios (username, password_hash, sal, nombre_completo)
-                    VALUES (:username, :password_hash, :sal, :nombre_completo)
-                """),
-                {
-                    "username": username,
-                    "password_hash": password_hash,
-                    "sal": sal,
-                    "nombre_completo": nombre_completo
-                }
-            )
-            connection.commit()
-        st.success("Usuario registrado exitosamente!")
-        return True
-    except Exception as e:
-        st.error(f"Error al crear usuario: {e}")
-        return False
-
-
-# Función de consulta principal
-def ejecutar_consulta(documento_id: str) -> Optional[pd.DataFrame]:
-    """Ejecuta la consulta SQL para buscar registros por documento"""
-    engine = init_app_connection()
-    if engine is None:
-        return None
-
-    try:
-        query = text("SELECT * FROM vw_matricula_cero_2025_2 WHERE documento = :documento_id")
-        with engine.connect() as connection:
-            df = pd.read_sql_query(query, connection, params={"documento_id": documento_id})
-        return df
-    except Exception as e:
-        st.error(f"Error al ejecutar la consulta: {e}")
-        return None
-
-
-# Componentes de la UI
-def mostrar_formulario_login():
-    """Muestra el formulario de login"""
-    with st.form("login_form"):
-        st.markdown("## 🔐 Inicio de Sesión")
-        username = st.text_input("Usuario", key="login_username")
-        password = st.text_input("Contraseña", type="password", key="login_password")
-        remember_me = st.checkbox("Mantener sesión iniciada", value=True, help="Mantener la sesión activa incluso si cierras el navegador")
-        submit_button = st.form_submit_button("Iniciar Sesión")
-
-        if submit_button:
-            if not username or not password:
-                st.error("Por favor complete todos los campos")
-                return
-
-            if autenticar_usuario(username, password):
-                user_info = obtener_info_usuario(username)
-                st.session_state.autenticado = True
-                st.session_state.username = username
-                st.session_state.user_info = user_info
-                
-                # Si está marcada la opción "Mantener sesión iniciada", crear la cookie
-                if remember_me:
-                    establecer_cookie_sesion(username, user_info)
-                
-                st.success("¡Inicio de sesión exitoso!")
-                st.rerun()
-            else:
-                st.error("Usuario o contraseña incorrectos")
-
-
-def mostrar_formulario_cambio_password():
-    """Muestra el formulario para cambiar contraseña"""
-    with st.form("cambio_password_form"):
-        st.markdown("## 🔄 Cambiar Contraseña")
-        password_actual = st.text_input("Contraseña actual", type="password")
-        nueva_password = st.text_input("Nueva contraseña", type="password")
-        confirmar_password = st.text_input("Confirmar nueva contraseña", type="password")
-        submit_button = st.form_submit_button("Cambiar Contraseña")
-
-        if submit_button:
-            if not all([password_actual, nueva_password, confirmar_password]):
-                st.error("Por favor complete todos los campos")
-                return
-
-            if nueva_password != confirmar_password:
-                st.error("Las nuevas contraseñas no coinciden")
-            elif len(nueva_password) < 8:
-                st.error("La nueva contraseña debe tener al menos 8 caracteres")
-            else:
-                cambiar_password(st.session_state.username, password_actual, nueva_password)
-
-
-def mostrar_formulario_registro():
-    """Muestra el formulario de registro de nuevos usuarios"""
-    # Solo permitir el registro si el usuario es 'admin'
-    if st.session_state.username == 'admin':
-        with st.form("registro_form"):
-            st.markdown("## 📝 Registrar Nuevo Usuario")
-            nuevo_username = st.text_input("Nombre de usuario")
-            nuevo_nombre = st.text_input("Nombre completo")
-            nueva_password = st.text_input("Contraseña", type="password")
-            confirmar_password = st.text_input("Confirmar contraseña", type="password")
-            submit_button = st.form_submit_button("Registrar Usuario")
-
-            if submit_button:
-                if not all([nuevo_username, nuevo_nombre, nueva_password, confirmar_password]):
-                    st.error("Por favor complete todos los campos")
-                    return
-
-                if nueva_password != confirmar_password:
-                    st.error("Las contraseñas no coinciden")
-                elif len(nueva_password) < 8:
-                    st.error("La contraseña debe tener al menos 8 caracteres")
-                else:
-                    crear_usuario(nuevo_username, nueva_password, nuevo_nombre)
-    else:
-        st.warning("🚨 Solo el usuario 'admin' puede registrar nuevos usuarios.")
-
-
-def mostrar_interfaz_principal():
-    """Muestra la interfaz principal de consulta"""
-
-    st.markdown(f"### 🔍 Consulta de Registros de Matrícula Cero | Usuario: {st.session_state.username}")
-
-    # Menú de opciones
-    menu_options = ["Consultar", "Cambiar contraseña"]
-    if st.session_state.username == 'admin':
-        menu_options.append("Registrar usuario")
-    menu_options.append("Cerrar sesión")
-
-    opcion = st.sidebar.selectbox(
-        "Menú",
-        menu_options
+@app.post("/auth/login", response_model=TokenResponse)
+def login(body: LoginRequest):
+    require_db_engines()
+    q = text(
+        """
+        SELECT username, password_hash, sal, activo, nombre_completo
+        FROM usuarios
+        WHERE username = :username
+        """
     )
+    with login_engine.connect() as conn:
+        row = conn.execute(q, {"username": body.username}).fetchone()
+    if not row:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario o contraseña inválidos")
 
-    if opcion == "Consultar":
-        mostrar_formulario_consulta()
-    elif opcion == "Cambiar contraseña":
-        mostrar_formulario_cambio_password()
-    elif opcion == "Registrar usuario":
-        mostrar_formulario_registro()
-    elif opcion == "Cerrar sesión":
-        if st.button("Confirmar cierre de sesión"):
-            # Eliminar la cookie de sesión
-            eliminar_cookie_sesion()
-            
-            # Limpiar el estado de la sesión
-            if 'autenticado' in st.session_state: del st.session_state.autenticado
-            if 'username' in st.session_state: del st.session_state.username
-            if 'user_info' in st.session_state: del st.session_state.user_info
-            st.rerun()
+    stored_hash = row[1]
+    salt = row[2]
+    active = bool(row[3])
+    full_name = row[4]
 
+    if not active:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cuenta desactivada")
+    if not (stored_hash and salt) or not verify_password(salt, stored_hash, body.password):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario o contraseña inválidos")
 
-def mostrar_formulario_consulta():
-    """Muestra el formulario de consulta principal"""
+    token = create_token({"username": body.username, "full_name": full_name})
+    return TokenResponse(access_token=token, user={"username": body.username, "full_name": full_name})
 
 
-    # Input para el documento
-    documento_input = st.text_input(
-        "Ingrese su número de documento:",
-        placeholder="Ejemplo: 12345678",
-        help="Ingrese su número de documento de identidad (cédula de ciudadanía, tarjeta de identidad, etc.)",
-        max_chars=15
-    )
+@app.post("/auth/change-password")
+def change_password(body: ChangePasswordRequest, user: Dict[str, Any] = Depends(get_current_user)):
+    require_db_engines()
+    username = user["username"]
 
-    # Botón de consulta
-    consulta_habilitada = documento_input.strip() and documento_input.isdigit() and 6 <= len(documento_input) <= 15
+    # Obtener hash actual
+    with login_engine.connect() as conn:
+        row = conn.execute(text("SELECT password_hash, sal FROM usuarios WHERE username=:u"), {"u": username}).fetchone()
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Usuario no encontrado")
+        stored_hash, salt = row[0], row[1]
+        if not verify_password(salt, stored_hash, body.current_password):
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Contraseña actual incorrecta")
 
-    if st.button("🔍 Consultar Registro", type="primary", disabled=not consulta_habilitada):
-        if documento_input.strip():
-            with st.spinner("🔄 Consultando base de datos... Por favor espere..."):
-                resultado = ejecutar_consulta(documento_input.strip())
-
-                if resultado is not None:
-                    if len(resultado) == 0:
-                        st.warning("⚠️ No se encontraron registros para el documento ingresado.")
-                        st.info(
-                            "💡 **Posibles razones:**\n- El documento no está registrado en el programa de Matrícula Cero 2025-2\n- Verifique que el número de documento sea correcto\n- Contacte al área de admisiones para más información")
-                    else:
-                        st.success(
-                            f"✅ ¡Registro encontrado! Se encontraron {len(resultado)} registro(s) para su documento.")
-
-                        columnas_a_mostrar = resultado.columns[:6]
-                        df_mostrar = resultado[[*columnas_a_mostrar, "fecha_registro", "Estado_Formulario", "ies_adscritas", "programa_admitido"]]
-
-                        st.info(
-                            f"📊 Mostrando las primeras {len(columnas_a_mostrar)} columnas de {len(resultado.columns)} columnas disponibles")
-
-                        st.markdown("#### 📋 Información de su registro:")
-                        st.dataframe(
-                            df_mostrar,
-                            use_container_width=True,
-                            hide_index=True
-                        )
-
-                        if len(resultado) > 0:
-                            csv = resultado.to_csv(index=False)
-                            st.download_button(
-                                label="📥 Descargar información completa (CSV)",
-                                data=csv,
-                                file_name=f"matricula_cero_{documento_input.strip()}.csv",
-                                mime="text/csv"
-                            )
-
-                        with st.expander("ℹ️ Información adicional del registro"):
-                            st.write(f"**Total de registros encontrados:** {len(resultado)}")
-                            st.write(f"**Columnas disponibles:** {len(resultado.columns)}")
-                            st.write(f"**Columnas mostradas:** {list(columnas_a_mostrar)}")
-
-                            if len(resultado.columns) > 10:
-                                st.write(f"**Columnas adicionales disponibles:** {len(resultado.columns) - 10}")
-                                st.write(f"**Columnas ocultas:** {list(resultado.columns[10:])}")
-                                st.info("💡 Descargue el archivo CSV para ver toda la información disponible")
-                else:
-                    st.error("❌ Error al ejecutar la consulta. Por favor, intente nuevamente.")
-                    st.info("💡 Si el problema persiste, contacte al administrador del sistema.")
-        else:
-            st.warning("⚠️ Por favor, ingrese un número de documento válido.")
-
-    if not consulta_habilitada and documento_input:
-        st.info("💡 Complete correctamente el número de documento para habilitar la consulta")
-
-    # Footer con información de contacto
-    st.markdown("---")
-    st.markdown("### 📞 Información de Contacto")
-    col1, col2 = st.columns(2)
-
-    with col1:
-        st.markdown("""
-        **Sapiencia** Programa Matrícula Cero 2025-2
-        """)
-
-    with col2:
-        st.markdown("""
-        **Horarios de Atención:** Lunes a Viernes: 8:00 AM - 5:00 PM  
-        """)
-
-    st.markdown("---")
-    st.caption("🔒 Sistema seguro - Información protegida por Sapiencia")
+        new_vals = hash_password_with_salt(body.new_password)
+        conn.execute(
+            text("UPDATE usuarios SET password_hash=:h, sal=:s WHERE username=:u"),
+            {"h": new_vals["hash"], "s": new_vals["salt"], "u": username},
+        )
+        conn.commit()
+    return {"status": "ok"}
 
 
-# Punto de entrada de la aplicación
-if __name__ == "__main__":
-    # Inicializar estado de sesión si no existe
-    if 'autenticado' not in st.session_state:
-        st.session_state.autenticado = False
-    
-    # Acceder al componente de cookies con permitiendo widgets explícitamente
-    cookie_manager = get_cookie_manager()
-    
-    # Verificar si existe una sesión en cookies
-    sesion_valida = verificar_cookie_sesion()
-    
-    # Mostrar contenido según autenticación
-    if st.session_state.autenticado or sesion_valida:
-        mostrar_interfaz_principal()
-    else:
-        mostrar_formulario_login()
+@app.post("/auth/register")
+def register_user(body: RegisterUserRequest, _: Dict[str, Any] = Depends(require_admin)):
+    require_db_engines()
+    with login_engine.connect() as conn:
+        exists = conn.execute(text("SELECT COUNT(*) FROM usuarios WHERE username=:u"), {"u": body.username}).scalar()
+        if exists:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El usuario ya existe")
+
+        vals = hash_password_with_salt(body.password)
+        conn.execute(
+            text(
+                """
+                INSERT INTO usuarios (username, password_hash, sal, nombre_completo, activo)
+                VALUES (:u, :h, :s, :n, 1)
+                """
+            ),
+            {"u": body.username, "h": vals["hash"], "s": vals["salt"], "n": body.full_name},
+        )
+        conn.commit()
+    return {"status": "ok"}
+
+
+@app.get("/consulta", response_model=ConsultaResponse)
+def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[str, Any] = Depends(get_current_user)):
+    require_db_engines()
+    q = text("SELECT * FROM vw_matricula_cero_2025_2 WHERE documento = :doc")
+    with app_engine.connect() as conn:
+        rows = conn.execute(q, {"doc": documento}).fetchall()
+
+    results: List[Dict[str, Any]] = [dict(r._mapping) for r in rows]
+    return ConsultaResponse(count=len(results), results=results)
+
