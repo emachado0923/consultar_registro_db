@@ -9,6 +9,7 @@ COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py /app/
+COPY api/ /app/api/
 
 # Cloud Run establece PORT; uvicorn debe respetarlo
 ENV PORT=8080
