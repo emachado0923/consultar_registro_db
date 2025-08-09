@@ -4,6 +4,6 @@ __pycache__/
 
 # Archivos locales
 .env
-*
+
 !.gitignore
 !.env.example
