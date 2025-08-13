@@ -27,11 +27,11 @@ def _build_mysql_url(prefix: str, defaults: Dict[str, str]) -> str:
     Prefijo esperado, por ejemplo: LOGIN_DB o APP_DB.
     Variables soportadas: {PREFIX}_{HOST,USER,PASSWORD,DATABASE,PORT}
     """
-    host = os.getenv(f"{prefix}_HOST", defaults["HOST"]).strip()
-    user = os.getenv(f"{prefix}_USER", defaults["USER"]).strip()
-    password = os.getenv(f"{prefix}_PASSWORD", defaults["PASSWORD"]).strip()
-    database = os.getenv(f"{prefix}_DATABASE", defaults["DATABASE"]).strip()
-    port = os.getenv(f"{prefix}_PORT", defaults.get("PORT", "3306")).strip()
+    host = defaults["HOST"]
+    user = defaults["USER"]
+    password = defaults["PASSWORD"]
+    database = defaults["DATABASE"]
+    port = "3306"
 
     # Asegurar que usuario/contraseña estén codificados para URL
     user_q = quote_plus(user)
