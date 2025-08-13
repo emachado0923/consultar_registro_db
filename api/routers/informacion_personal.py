@@ -32,15 +32,13 @@ def read_informacion_personal(
     items = session.exec(select(InformacionPersonal).offset(offset).limit(limit)).all()
     return items
 
-@router.post("/actualizar", response_model=InformacionPersonal)
+@router.patch("/{docconvfondo}", response_model=InformacionPersonal)
 def update_informacion_personal(
-    docconvfondo: str = Query(..., description="Documento con fondo", alias="docconvfondo"),
-    data: InformacionPersonalUpdate = None,
-    session: SessionDep = Depends(),
+    docconvfondo: str,
+    data: InformacionPersonalUpdate,
+    session: SessionDep,
     _: Dict[str, Any] = Depends(get_current_user),
 ) -> InformacionPersonal:
-    # Reemplazar %20 por espacio si viene codificado
-    docconvfondo = docconvfondo.replace("%20", " ")
     item = session.get(InformacionPersonal, docconvfondo)
     if not item:
         raise HTTPException(status_code=404, detail="Registro no encontrado")
