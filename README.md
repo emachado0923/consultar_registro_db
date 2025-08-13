@@ -68,3 +68,8 @@ Asegura definir variables de entorno en el servicio Cloud Run (UI o gcloud) para
 
 - No publiques credenciales en el código ni en el repo.
 - Use JWT_SECRET robusto y rota contraseñas.
+
+
+para borrar secretos:
+git filter-repo --replace-text replace.txt --force
+git push --force --prune -u origin main
