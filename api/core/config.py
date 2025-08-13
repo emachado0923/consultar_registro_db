@@ -6,9 +6,12 @@ from urllib.parse import quote_plus
 # Valores por defecto ("quemados"). Se pueden sobreescribir por .env/variables de entorno.
 DEFAULT_ANALITICA_DB = {
     "HOST": "10.124.80.4",
-    "USER": "analitica",
-    "PASSWORD": "REDACTED",
+    #"HOST": "10.124.80.4",
+    "USER": "REDACTED",
+    #"USER": "analitica",
     "DATABASE": "analitica_fondos",
+    #"PASSWORD": "REDACTED",
+    "PASSWORD": "REDACTED",
     "PORT": "3306",
 }
 
