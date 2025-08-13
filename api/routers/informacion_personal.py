@@ -32,11 +32,11 @@ def read_informacion_personal(
     items = session.exec(select(InformacionPersonal).offset(offset).limit(limit)).all()
     return items
 
-@router.patch("/{docconvfondo}", response_model=InformacionPersonal)
+@router.post("/actualizar", response_model=InformacionPersonal)
 def update_informacion_personal(
-    docconvfondo: str,
     data: InformacionPersonalUpdate,
     session: SessionDep,
+    docconvfondo: str = Query(...),
     _: Dict[str, Any] = Depends(get_current_user),
 ) -> InformacionPersonal:
     item = session.get(InformacionPersonal, docconvfondo)
