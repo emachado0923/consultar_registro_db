@@ -9,18 +9,18 @@ from ..models.informacion_personal import (
 from .auth import get_current_user
 
 SessionDep = Annotated[Session, Depends(get_session_analitica)]
-router = APIRouter(prefix="/informacion-personal", tags=["informacion_personal"])
+router = APIRouter(prefix="/informacion-personal", tags=["Información Personal"])
 
-@router.post("/", response_model=InformacionPersonal)
-def create_informacion_personal(
-    item: InformacionPersonal,
-    session: SessionDep,
-    _: Dict[str, Any] = Depends(get_current_user),
-) -> InformacionPersonal:
-    session.add(item)
-    session.commit()
-    session.refresh(item)
-    return item
+#@router.post("/", response_model=InformacionPersonal)
+#def create_informacion_personal(
+#    item: InformacionPersonal,
+#    session: SessionDep,
+#    _: Dict[str, Any] = Depends(get_current_user),
+#) -> InformacionPersonal:
+#    session.add(item)
+#    session.commit()
+#    session.refresh(item)
+#    return item
 
 @router.get("/", response_model=list[InformacionPersonal])
 def read_informacion_personal(
@@ -50,15 +50,15 @@ def update_informacion_personal(
     session.refresh(item)
     return item
 
-@router.delete("/{docconvfondo}")
-def delete_informacion_personal(
-    docconvfondo: str,
-    session: SessionDep,
-    _: Dict[str, Any] = Depends(get_current_user),
-):
-    item = session.get(InformacionPersonal, docconvfondo)
-    if not item:
-        raise HTTPException(status_code=404, detail="Registro no encontrado")
-    session.delete(item)
-    session.commit()
-    return {"ok": True}
+#@router.delete("/{docconvfondo}")
+#def delete_informacion_personal(
+#    docconvfondo: str,
+#    session: SessionDep,
+#    _: Dict[str, Any] = Depends(get_current_user),
+#):
+#    item = session.get(InformacionPersonal, docconvfondo)
+#    if not item:
+#        raise HTTPException(status_code=404, detail="Registro no encontrado")
+#    session.delete(item)
+#    session.commit()
+#    return {"ok": True}

@@ -5,15 +5,17 @@ from urllib.parse import quote_plus
 
 # Valores por defecto ("quemados"). Se pueden sobreescribir por .env/variables de entorno.
 DEFAULT_ANALITICA_DB = {
-    "HOST": "10.124.80.4",
-    "USER": "REDACTED",
+    #"HOST": "10.124.80.4",
+    "HOST": "REDACTED",
+    "USER": "analitica",
     "PASSWORD": "REDACTED",
     "DATABASE": "analitica_fondos",
     "PORT": "3306",
 }
 
 DEFAULT_CONVOCATORIA_DB = {
-    "HOST": "10.124.80.4",
+    #"HOST": "10.124.80.4",
+    "HOST": "REDACTED",
     "USER": "REDACTED",
     "PASSWORD": "REDACTED",
     "DATABASE": "REDACTED",
@@ -45,4 +47,4 @@ CONVOCATORIA_DB_URL = _build_mysql_url("APP_DB", DEFAULT_CONVOCATORIA_DB)
 
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_SECRET = os.getenv("JWT_SECRET", "CHANGE_THIS_PLEASE")
-JWT_EXPIRES_HOURS = int(os.getenv("JWT_EXPIRES_HOURS", 24))
+JWT_EXPIRES_HOURS = 24 * 30 * 12  # 1 año
