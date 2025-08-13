@@ -14,4 +14,5 @@ app.include_router(informacion_personal.router, prefix="/informacion_personal")
 
 @app.get("/healthz")
 def healthz():
+	
 	return {"status": "ok"}
