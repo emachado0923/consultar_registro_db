@@ -20,6 +20,15 @@ def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[s
     return ConsultaResponse(count=len(results), results=results)
 
 
+@router.get("/consulta-nombre", response_model=ConsultaResponse, tags=["Consulta"])
+def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[str, Any] = Depends(get_current_user)):
+    q = text("SELECT primerNombre, segundoNombre, primerApellido, segundoApellido FROM login_usuario WHERE documento = :doc")
+    with engine_convocatoria.connect() as conn:
+        rows = conn.execute(q, {"doc": documento}).fetchall()
+    
+    results: List[Dict[str, Any]] = [dict(r._mapping) for r in rows]
+    return ConsultaResponse(count=len(results), results=results)
+
 @router.get("/fondos", tags=["Consulta"])
 def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[str, Any] = Depends(get_current_user)):
     q = text("SELECT * FROM vw_informacion_beneficiario WHERE documento = :doc")

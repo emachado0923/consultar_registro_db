@@ -2,7 +2,6 @@ import os
 from typing import Any, Dict, List, Optional
 from urllib.parse import quote_plus
 
-
 DEFAULT_ANALITICA_DB = {
     "HOST": "10.120.64.32",
     "USER": "analitica",
@@ -18,6 +17,7 @@ DEFAULT_CONVOCATORIA_DB = {
     "DATABASE": "convocatoria_sapiencia",
     "PORT": "3306",
 }
+
 
 
 def _build_mysql_url(prefix: str, defaults: Dict[str, str]) -> str:
