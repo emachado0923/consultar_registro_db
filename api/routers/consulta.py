@@ -35,6 +35,7 @@ def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[s
 
     aggregated_result = {
         "nombre": results_from_db[0].get("nombre_completo"),
+        "id_usuario": results_from_db[0].get("id_usuario"),
         "convocatoria": [r.get("convocatoria") for r in results_from_db],
         "fondo": [r.get("fondo_sapiencia") for r in results_from_db],
         "tiene_varios_registros": results_from_db[0].get("tiene_varios_fondos"),

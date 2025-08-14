@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional
 from urllib.parse import quote_plus
 
 
-# Valores por defecto ("quemados"). Se pueden sobreescribir por .env/variables de entorno.
 DEFAULT_ANALITICA_DB = {
     "HOST": "10.120.64.32",
     "USER": "analitica",

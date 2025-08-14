@@ -31,7 +31,7 @@ def get_current_user(credentials: Optional[HTTPAuthorizationCredentials] = Depen
 
 
 def require_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str, Any]:
-    if user.get("username") != "admin":
+    if user.get("username") not in ["julian.usuga", "genaro.aristizabal", "miguel.perez"]:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="No autorizado")
     return user
 
@@ -85,22 +85,22 @@ def change_password(body: ChangePasswordRequest, user: Dict[str, Any] = Depends(
     return {"status": "ok"}
 
 
-#@router.post("/register", tags=["Auth"])
-#def register_user(body: RegisterUserRequest, _: Dict[str, Any] = Depends(require_admin)):
-#    with engine_analitica.connect() as conn:
-#        exists = conn.execute(text("SELECT COUNT(*) FROM usuarios WHERE username=:u"), {"u": body.username}).scalar()
-#        if exists:
-#            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El usuario ya existe")
-#
-#        vals = hash_password_with_salt(body.password)
-#        conn.execute(
-#            text(
-#                """
-#                INSERT INTO usuarios (username, password_hash, sal, nombre_completo, activo)
-#                VALUES (:u, :h, :s, :n, 1)
-#                """
-#            ),
-#            {"u": body.username, "h": vals["hash"], "s": vals["salt"], "n": body.full_name},
-#        )
-#        conn.commit()
-#    return {"status": "ok"}
+@router.post("/register", tags=["Auth"])
+def register_user(body: RegisterUserRequest, _: Dict[str, Any] = Depends(require_admin)):
+    with engine_analitica.connect() as conn:
+        exists = conn.execute(text("SELECT COUNT(*) FROM usuarios WHERE username=:u"), {"u": body.username}).scalar()
+        if exists:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="El usuario ya existe")
+
+        vals = hash_password_with_salt(body.password)
+        conn.execute(
+            text(
+                """
+                INSERT INTO usuarios (username, password_hash, sal, nombre_completo, activo)
+                VALUES (:u, :h, :s, :n, 1)
+                """
+            ),
+            {"u": body.username, "h": vals["hash"], "s": vals["salt"], "n": body.full_name},
+        )
+        conn.commit()
+    return {"status": "ok"}
