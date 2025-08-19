@@ -29,6 +29,17 @@ def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[s
     results: List[Dict[str, Any]] = [dict(r._mapping) for r in rows]
     return ConsultaResponse(count=len(results), results=results)
 
+
+@router.get("/existe-tabla-habilitados-renovar", response_model=ConsultaResponse, tags=["Consulta"])
+def consulta(documento: str = Query(...,min_length=3, max_length=20), _: Dict[str, Any] = Depends(get_current_user)):
+    q = text("SELECT COUNT(*) AS existe FROM fondos_habilitados_renovar WHERE documento = :d")
+    with engine_convocatoria.connect() as conn:
+        rows = conn.execute(q, {"d": documento}).fetchall()
+    results: List[Dict[str, Any]] = [dict(r._mapping) for r in rows]
+    return ConsultaResponse(count=len(results), results=results)
+
+
+
 @router.get("/fondos", tags=["Consulta"])
 def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[str, Any] = Depends(get_current_user)):
     q = text("SELECT * FROM vw_informacion_beneficiario WHERE documento = :doc")

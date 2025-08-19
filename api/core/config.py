@@ -19,7 +19,6 @@ DEFAULT_CONVOCATORIA_DB = {
 }
 
 
-
 def _build_mysql_url(prefix: str, defaults: Dict[str, str]) -> str:
     """Construye la URL de conexión a MySQL usando env con fallback a defaults.
 
