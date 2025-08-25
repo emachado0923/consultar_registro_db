@@ -43,14 +43,16 @@ def update_informacion_programas_academicos(
     data: InformacionProgramasAcademicosUpdate,
     session: SessionDep,
     docconvfondo: str = Query(...),
-    _: Dict[str, Any] = Depends(get_current_user),
+    user: Dict[str, Any] = Depends(get_current_user),
 ) -> InformacionProgramasAcademicos:
     item = session.get(InformacionProgramasAcademicos, docconvfondo)
     if not item:
         raise HTTPException(status_code=404, detail="Registro no encontrado")
-    update_data = data.dict(exclude_unset=True)
+    # Ignore client-provided responsable_actualizacion; set it from authenticated user
+    update_data = data.dict(exclude_unset=True, exclude={"responsable_actualizacion"})
     for key, value in update_data.items():
         setattr(item, key, value)
+    item.responsable_actualizacion = user.get("full_name", "N/A")
     session.add(item)
     session.commit()
     session.refresh(item)
