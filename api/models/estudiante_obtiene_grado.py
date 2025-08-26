@@ -8,8 +8,10 @@ from sqlmodel import Field, SQLModel
 class EstudianteObtieneGrado(SQLModel, table=True):
     __tablename__ = "estudiante_obtiene_grado"
 
-    documento: str = Field(primary_key=True, max_length=100)
-    fondo_sapiencia: str = Field(primary_key=True, max_length=100)
+    docconvfondo: str = Field(primary_key=True, max_length=100)
+    documento: str = Field(max_length=100)
+    convocatoria: Optional[str] = Field(default=None, max_length=100)
+    fondo_sapiencia: str = Field(max_length=100)
     ies_grado: str = Field(max_length=100)
     periodo_grado: Optional[str] = Field(default=None, max_length=100)
     fecha_grado: Optional[date] = Field(default=None)
@@ -25,7 +27,9 @@ class EstudianteObtieneGrado(SQLModel, table=True):
 
 
 class EstudianteObtieneGradoCreate(SQLModel):
+    docconvfondo: str
     documento: str
+    convocatoria: Optional[str] = None
     fondo_sapiencia: str
     ies_grado: str
     periodo_grado: Optional[str] = None
