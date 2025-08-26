@@ -10,6 +10,7 @@ from api.routers import (
 	informacion_programas_academicos,
 	renuncia_o_terminacion,
 	suspension_especial,
+	estudiante_obtiene_grado,
 )
 
 load_dotenv()
@@ -27,6 +28,7 @@ app.include_router(
 )
 app.include_router(renuncia_o_terminacion.router, prefix="/renuncia-o-terminacion")
 app.include_router(suspension_especial.router, prefix="/suspension-especial")
+app.include_router(estudiante_obtiene_grado.router, prefix="/estudiante-obtiene-grado")
 
 
 @app.get("/")
