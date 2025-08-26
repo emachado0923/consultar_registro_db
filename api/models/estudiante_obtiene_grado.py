@@ -12,10 +12,9 @@ class EstudianteObtieneGrado(SQLModel, table=True):
     documento: str = Field(max_length=100)
     convocatoria: Optional[str] = Field(default=None, max_length=100)
     fondo_sapiencia: str = Field(max_length=100)
-    ies_grado: str = Field(max_length=100)
     periodo_grado: Optional[str] = Field(default=None, max_length=100)
     fecha_grado: Optional[date] = Field(default=None)
-    fecha_actualizacion: Optional[datetime] = Field(
+    fecha_creacion: Optional[datetime] = Field(
         default=None,
         nullable=False,
         sa_column_kwargs={
@@ -23,7 +22,7 @@ class EstudianteObtieneGrado(SQLModel, table=True):
             "onupdate": text("CURRENT_TIMESTAMP"),
         },
     )
-    responsable_actualizacion: str = Field(max_length=100)
+    responsable_creacion: str = Field(max_length=100)
 
 
 class EstudianteObtieneGradoCreate(SQLModel):
@@ -31,6 +30,5 @@ class EstudianteObtieneGradoCreate(SQLModel):
     documento: str
     convocatoria: Optional[str] = None
     fondo_sapiencia: str
-    ies_grado: str
     periodo_grado: Optional[str] = None
     fecha_grado: Optional[date] = None
