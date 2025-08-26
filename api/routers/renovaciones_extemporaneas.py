@@ -18,6 +18,7 @@ router = APIRouter()
     "/consulta/",
     response_model=List[RenovacionesExtemporaneas],
     tags=["Renovaciones Extemporaneas"],
+    summary="Consultar renovaciones extemporáneas por período",
 )
 def get_renovaciones_extemporaneas(
     periodo: str = Query(..., min_length=6, max_length=6),
@@ -35,6 +36,7 @@ def get_renovaciones_extemporaneas(
     "/agrega-tabla-formulario/",
     response_model=RenovacionesExtemporaneas,
     tags=["Renovaciones Extemporaneas"],
+    summary="Crear una nueva renovación extemporánea",
 )
 def create_renovacion_extemporanea(
     renovacion: RenovacionesExtemporaneasCreate,
@@ -59,6 +61,7 @@ class Documento(BaseModel):
 @router.post(
     "/agrega-tabla-ti/",
     tags=["Renovaciones Extemporaneas"],
+    summary="Agregar un documento a la tabla de habilitados para renovar (TI)",
 )
 def agrega_tabla_ti(
     item: Documento,

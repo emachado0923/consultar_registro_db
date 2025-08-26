@@ -10,7 +10,7 @@ from api.routers.auth import get_current_user
 router = APIRouter()
 
 
-@router.get("/formulario-mc", response_model=ConsultaResponse, tags=["Consulta"])
+@router.get("/formulario-mc", response_model=ConsultaResponse, tags=["Consulta"], summary="Consultar formulario de Matrícula Cero")
 def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[str, Any] = Depends(get_current_user)):
     q = text("SELECT * FROM vw_matricula_cero_2025_2 WHERE documento = :doc")
     with engine_convocatoria.connect() as conn:
@@ -20,7 +20,7 @@ def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[s
     return ConsultaResponse(count=len(results), results=results)
 
 
-@router.get("/consulta-nombre", response_model=ConsultaResponse, tags=["Consulta"])
+@router.get("/consulta-nombre", response_model=ConsultaResponse, tags=["Consulta"], summary="Consultar nombre por documento")
 def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[str, Any] = Depends(get_current_user)):
     q = text("SELECT id_usuario, primerNombre, segundoNombre, primerApellido, segundoApellido FROM login_usuario WHERE documento = :doc")
     with engine_convocatoria.connect() as conn:
@@ -30,7 +30,7 @@ def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[s
     return ConsultaResponse(count=len(results), results=results)
 
 
-@router.get("/existe-tabla-habilitados-renovar", response_model=ConsultaResponse, tags=["Consulta"])
+@router.get("/existe-tabla-habilitados-renovar", response_model=ConsultaResponse, tags=["Consulta"], summary="Verificar si un documento existe en la tabla de habilitados para renovar")
 def consulta(documento: str = Query(...,min_length=3, max_length=20), _: Dict[str, Any] = Depends(get_current_user)):
     q = text("SELECT COUNT(*) AS existe FROM fondos_habilitados_renovar WHERE documento = :d")
     with engine_convocatoria.connect() as conn:
@@ -40,7 +40,7 @@ def consulta(documento: str = Query(...,min_length=3, max_length=20), _: Dict[st
 
 
 
-@router.get("/fondos", tags=["Consulta"])
+@router.get("/fondos", tags=["Consulta"], summary="Consultar fondos de un beneficiario")
 def consulta(documento: str = Query(..., min_length=6, max_length=15), _: Dict[str, Any] = Depends(get_current_user)):
     q = text("SELECT * FROM vw_informacion_beneficiario WHERE documento = :doc")
 

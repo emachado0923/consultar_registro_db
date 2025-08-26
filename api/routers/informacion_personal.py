@@ -22,7 +22,7 @@ router = APIRouter(prefix="/informacion-personal", tags=["Información Personal"
 #    session.refresh(item)
 #    return item
 
-@router.get("/", response_model=list[InformacionPersonal])
+@router.get("/", response_model=list[InformacionPersonal], summary="Leer información personal con paginación")
 def read_informacion_personal(
     session: SessionDep,
     offset: int = 0,
@@ -32,7 +32,7 @@ def read_informacion_personal(
     items = session.exec(select(InformacionPersonal).offset(offset).limit(limit)).all()
     return items
 
-@router.post("/actualizar", response_model=InformacionPersonal)
+@router.post("/actualizar", response_model=InformacionPersonal, summary="Actualizar información personal")
 def update_informacion_personal(
     data: InformacionPersonalUpdate,
     session: SessionDep,

@@ -14,7 +14,7 @@ SessionDep = Annotated[Session, Depends(get_session_analitica)]
 router = APIRouter(prefix="/renuncia-o-terminacion", tags=["Renuncia o Terminación"])
 
 
-@router.post("/agregar", response_model=RenunciaOTerminacion)
+@router.post("/agregar", response_model=RenunciaOTerminacion, summary="Agregar una nueva renuncia o terminación")
 def add_renuncia_o_terminacion(
     data: RenunciaOTerminacionCreate,
     session: SessionDep,

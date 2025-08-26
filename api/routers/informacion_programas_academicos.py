@@ -15,7 +15,7 @@ SessionDep = Annotated[Session, Depends(get_session_analitica)]
 router = APIRouter(prefix="/informacion-programas-academicos", tags=["Información Académica"])
 
 
-@router.get("/", response_model=list[InformacionProgramasAcademicos])
+@router.get("/", response_model=list[InformacionProgramasAcademicos], summary="Leer información de programas académicos con paginación")
 def read_informacion_programas_academicos(
     session: SessionDep,
     offset: int = 0,
@@ -26,7 +26,7 @@ def read_informacion_programas_academicos(
     return items
 
 
-@router.get("/{docconvfondo}", response_model=InformacionProgramasAcademicos)
+@router.get("/{docconvfondo}", response_model=InformacionProgramasAcademicos, summary="Obtener información de un programa académico por docconvfondo")
 def get_informacion_programas_academicos(
     docconvfondo: str,
     session: SessionDep,
@@ -38,7 +38,7 @@ def get_informacion_programas_academicos(
     return item
 
 
-@router.post("/actualizar", response_model=InformacionProgramasAcademicos)
+@router.post("/actualizar", response_model=InformacionProgramasAcademicos, summary="Actualizar información de un programa académico")
 def update_informacion_programas_academicos(
     data: InformacionProgramasAcademicosUpdate,
     session: SessionDep,

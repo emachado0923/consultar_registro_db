@@ -36,7 +36,7 @@ def require_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str,
     return user
 
 
-@router.post("/login", response_model=TokenResponse, tags=["Auth"])
+@router.post("/login", response_model=TokenResponse, tags=["Auth"], summary="Iniciar sesión")
 def login(body: LoginRequest):
     q = text(
         """
@@ -64,7 +64,7 @@ def login(body: LoginRequest):
     return TokenResponse(access_token=token, user={"username": body.username, "full_name": full_name})
 
 
-@router.post("/change-password", tags=["Auth"])
+@router.post("/change-password", tags=["Auth"], summary="Cambiar contraseña")
 def change_password(body: ChangePasswordRequest, user: Dict[str, Any] = Depends(get_current_user)):
     username = user["username"]
 
@@ -85,7 +85,7 @@ def change_password(body: ChangePasswordRequest, user: Dict[str, Any] = Depends(
     return {"status": "ok"}
 
 
-@router.post("/register", tags=["Auth"])
+@router.post("/register", tags=["Auth"], summary="Registrar un nuevo usuario (solo administradores)")
 def register_user(body: RegisterUserRequest, _: Dict[str, Any] = Depends(require_admin)):
     with engine_analitica.connect() as conn:
         exists = conn.execute(text("SELECT COUNT(*) FROM usuarios WHERE username=:u"), {"u": body.username}).scalar()

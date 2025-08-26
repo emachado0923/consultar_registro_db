@@ -14,7 +14,7 @@ SessionDep = Annotated[Session, Depends(get_session_analitica)]
 router = APIRouter(prefix="/suspension-especial", tags=["Suspensión Especial"])
 
 
-@router.post("/agregar", response_model=SuspensionEspecial)
+@router.post("/agregar", response_model=SuspensionEspecial, summary="Agregar una nueva suspensión especial")
 def add_suspension_especial(
     data: SuspensionEspecialCreate,
     session: SessionDep,

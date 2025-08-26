@@ -10,7 +10,7 @@ from api.routers.auth import get_current_user
 router = APIRouter()
 
 
-@router.post("/changelog", tags=["ChangeLog"])
+@router.post("/changelog", tags=["ChangeLog"], summary="Crear un registro de cambio")
 def create_change_log(body: ChangeLogRequest, user: Dict[str, Any] = Depends(get_current_user)):
     responsable_cambio = user.get("full_name", "N/A")
     with engine_analitica.connect() as conn:
