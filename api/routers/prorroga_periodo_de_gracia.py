@@ -25,7 +25,7 @@ def add_prorroga_periodo_de_gracia(
     data: ProrrogaPeriodoDeGraciaCreate,
     session: SessionDep,
     user: Dict[str, Any] = Depends(get_current_user),
-) -> ProrrorogaPeriodoDeGracia:
+) -> ProrrogaPeriodoDeGracia:
     responsable_registro = user.get("full_name", "N/A")
     new_item = ProrrogaPeriodoDeGracia.from_orm(
         data, {"responsable_registro": responsable_registro}
