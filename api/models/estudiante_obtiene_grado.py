@@ -36,5 +36,3 @@ class EstudianteObtieneGradoCreate(SQLModel):
     fecha_grado: Optional[date] = None
     renuncia_a_giros: str
     a_cuantos_giros_renuncia: Optional[int] = 0
-    renuncia_a_giros: str
-    a_cuantos_giros_renuncia: Optional[int] = 0
