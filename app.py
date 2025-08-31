@@ -14,6 +14,7 @@ from api.routers import (
 	prorroga_periodo_de_gracia,
 	renuncia_modalidad,
 	informacion_deudores,
+	suspension_temporal,
 )
 
 load_dotenv()
@@ -35,6 +36,7 @@ app.include_router(estudiante_obtiene_grado.router, prefix="/estudiante-obtiene-
 app.include_router(prorroga_periodo_de_gracia.router, prefix="/prorroga-periodo-de-gracia")
 app.include_router(renuncia_modalidad.router, prefix="/renuncia-modalidad")
 app.include_router(informacion_deudores.router, prefix="/informacion-deudores")
+app.include_router(suspension_temporal.router, prefix="/suspension-temporal")
 
 
 @app.get("/")
