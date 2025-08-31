@@ -1,7 +1,8 @@
 from typing import Annotated, Any, Dict
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session
+from sqlalchemy.exc import IntegrityError
 
 from ..core.database import get_session_analitica
 from ..models.estudiante_obtiene_grado import (
@@ -20,11 +21,21 @@ def add_estudiante_obtiene_grado(
     session: SessionDep,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> EstudianteObtieneGrado:
-    responsable_creacion = user.get("full_name", "N/A")
+    responsable_creacion = user.get("name", "Usuario desconocido")
     new_item = EstudianteObtieneGrado.from_orm(
         data, {"responsable_creacion": responsable_creacion}
     )
     session.add(new_item)
-    session.commit()
-    session.refresh(new_item)
-    return new_item
+    try:
+        session.commit()
+        session.refresh(new_item)
+        return new_item
+    except IntegrityError:
+        session.rollback()
+        raise HTTPException(
+            status_code=400,
+            detail="El registro con el docconvfondo proporcionado ya existe.",
+        )
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=f"Error en la base de datos: {e}")
