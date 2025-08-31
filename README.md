@@ -1,75 +1,135 @@
-# 🔍 Consulta de Registros en Base de Datos MySQL - FastAPI
+# API de Consulta de Registro Estudiantil
 
-API REST con FastAPI para autenticar usuarios y consultar registros por documento desde MySQL. Diseñada para ejecutarse en Cloud Run.
+Este proyecto es una API RESTful construida con FastAPI para gestionar y consultar registros estudiantiles y académicos. Proporciona una interfaz segura y robusta para interactuar con la base de datos de información estudiantil.
 
-## Endpoints
+## ✨ Características Principales
 
-- GET /healthz: healthcheck.
-- POST /auth/login: body { username, password } → devuelve JWT.
-- POST /auth/change-password: body { current_password, new_password } (Bearer).
-- POST /auth/register: body { username, full_name, password } (Bearer admin).
-- GET /consulta?documento=XXXXXXXX (Bearer): consulta en vista vw_matricula_cero_2025_2.
+*   **Autenticación Segura:** Utiliza JWT para proteger los endpoints.
+*   **Gestión de Estudiantes:** Operaciones CRUD para la información personal y académica de los estudiantes.
+*   **Consultas Avanzadas:** Endpoints específicos para consultas complejas como deudores, renovaciones, y más.
+*   **Registro de Cambios:** Mantiene un historial de cambios (changelog) para auditorías.
+*   **Modularidad:** Código organizado en routers para una mejor mantenibilidad y escalabilidad.
+*   **Documentación Automática:** Gracias a FastAPI, se genera documentación interactiva de la API (Swagger UI y ReDoc).
 
-## Variables de entorno y defaults
+## Endpoints de la API
 
-La app ahora soporta archivo `.env` (vía `python-dotenv`). Si no define variables, usará valores por defecto "quemados" en el código. Para personalizar, copie `.env.example` a `.env` y edite:
+A continuación se muestra una tabla con los principales grupos de endpoints disponibles:
 
-- LOGIN_DB_HOST, LOGIN_DB_USER, LOGIN_DB_PASSWORD, LOGIN_DB_DATABASE, LOGIN_DB_PORT (opcional)
-- APP_DB_HOST, APP_DB_USER, APP_DB_PASSWORD, APP_DB_DATABASE, APP_DB_PORT (opcional)
-- JWT_SECRET (cámbielo en producción)
+| Prefijo del Endpoint                      | Descripción                                                                      |
+| ----------------------------------------- | -------------------------------------------------------------------------------- |
+| `/auth`                                   | Autenticación y generación de tokens JWT.                                        |
+| `/consulta`                               | Consultas generales sobre los registros.                                         |
+| `/informacion_personal`                   | Gestión de la información personal de los estudiantes.                           |
+| `/changelog`                              | Historial de cambios realizados en los registros.                                |
+| `/renovaciones-extemporaneas`             | Gestión de renovaciones extemporáneas.                                          |
+| `/informacion-programas-academicos`       | Información sobre los programas académicos.                                      |
+| `/renuncia-o-terminacion`                 | Gestión de renuncias o terminaciones de modalidad.                               |
+| `/suspension-especial`                    | Gestión de suspensiones especiales.                                              |
+| `/estudiante-obtiene-grado`               | Registro de la obtención de grado por parte de los estudiantes.                  |
+| `/prorroga-periodo-de-gracia`             | Gestión de prórrogas del período de gracia.                                      |
+| `/renuncia-modalidad`                     | Gestión de renuncias a la modalidad de estudio.                                  |
+| `/informacion-deudores`                   | Consulta de información sobre deudores.                                          |
 
-## Desarrollo local
+Para ver la documentación detallada y probar los endpoints, visita `/docs` o `/redoc` en la URL base de la aplicación una vez que esté en ejecución.
 
-1) Instalar dependencias
-```pwsh
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+## 🚀 Cómo Empezar
+
+Sigue estos pasos para configurar el entorno de desarrollo local.
+
+### Prerrequisitos
+
+*   Python 3.9+
+*   Docker (opcional, para despliegue)
+*   Un gestor de paquetes de Python como `pip`
+
+### Instalación
+
+1.  **Clona el repositorio:**
+    ```bash
+    git clone https://github.com/emachado0923/consultar_registro_db.git
+    cd consultar_registro_db
+    ```
+
+2.  **Crea y activa un entorno virtual:**
+    ```bash
+    python -m venv venv
+    # En Windows
+    .\venv\Scripts\activate
+    # En macOS/Linux
+    source venv/bin/activate
+    ```
+
+3.  **Instala las dependencias:**
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+4.  **Configura las variables de entorno:**
+    Crea un archivo `.env` en la raíz del proyecto y añade las siguientes variables. Reemplaza los valores con tu configuración.
+    ```env
+    DATABASE_URL="postgresql://user:password@host:port/database"
+    SECRET_KEY="tu_super_secreto_aqui"
+    ALGORITHM="HS256"
+    ACCESS_TOKEN_EXPIRE_MINUTES=30
+    ```
+
+## Uso
+
+### Ejecutando la Aplicación
+
+Para iniciar la aplicación en modo de desarrollo con recarga automática:
+
+```bash
+uvicorn app:app --reload
 ```
 
-2) Opcional: usar `.env`
-	- Copie `.env.example` a `.env` y ajuste valores. Si omite este paso, se usarán los defaults del código.
+La API estará disponible en `http://127.0.0.1:8000`.
 
-	O bien exporte variables de entorno (PowerShell):
-```pwsh
-$env:LOGIN_DB_HOST="localhost"
-$env:LOGIN_DB_USER="user"
-$env:LOGIN_DB_PASSWORD="pass"
-$env:LOGIN_DB_DATABASE="analitica_fondos"
-$env:APP_DB_HOST="localhost"
-$env:APP_DB_USER="user"
-$env:APP_DB_PASSWORD="pass"
-$env:APP_DB_DATABASE="REDACTED"
-$env:JWT_SECRET="change-me"
-```
+### Usando Docker
 
-3) Levantar servidor
-```pwsh
-uvicorn app:app --reload --port 8080
-```
+También puedes construir y ejecutar la aplicación usando Docker.
 
-## Despliegue en Cloud Run
+1.  **Construye la imagen de Docker:**
+    ```bash
+    docker build -t consultar-registro-api .
+    ```
 
-Este repo incluye:
+2.  **Ejecuta el contenedor:**
+    ```bash
+    docker run -d -p 8000:8000 --env-file .env --name consultar-registro-container consultar-registro-api
+    ```
 
-- Dockerfile: ejecuta uvicorn y respeta PORT.
-- cloudbuild.yaml: build/push a Artifact Registry y deploy a Cloud Run.
+## 🛠️ Tecnologías Utilizadas
 
-Parámetros usados por Cloud Build (substitutions):
+*   **Backend:**
+    *   [FastAPI](https://fastapi.tiangolo.com/): Framework web de alto rendimiento para construir APIs.
+    *   [Pydantic](https://pydantic-docs.helpmanual.io/): Para la validación de datos.
+    *   [SQLAlchemy](https://www.sqlalchemy.org/): ORM para la interacción con la base de datos.
+    *   [python-dotenv](https://github.com/theskumar/python-dotenv): Para la gestión de variables de entorno.
+    *   [passlib](https://passlib.readthedocs.io/en/stable/): Para el hashing de contraseñas.
+    *   [python-jose](https://github.com/mpdavis/python-jose): Para la implementación de JWT.
 
-- _REPOSITORY_NAME
-- _IMAGE_NAME
-- _SERVICE_NAME
-- _PORT (usar 8080)
+*   **Base de Datos:**
+    *   PostgreSQL (o la base de datos que configures en `DATABASE_URL`).
 
-Asegura definir variables de entorno en el servicio Cloud Run (UI o gcloud) para las credenciales de DB y JWT_SECRET.
+*   **Despliegue:**
+    *   [Docker](https://www.docker.com/): Para la contenerización.
+    *   [Gunicorn](https://gunicorn.org/): Servidor WSGI para producción.
+    *   [Cloud Build](https://cloud.google.com/build): Para la automatización de builds en Google Cloud.
 
-## Notas de seguridad
+## 🤝 Contribuciones
 
-- No publiques credenciales en el código ni en el repo.
-- Use JWT_SECRET robusto y rota contraseñas.
+Las contribuciones son bienvenidas. Si deseas contribuir, por favor sigue estos pasos:
 
+1.  Haz un fork del proyecto.
+2.  Crea una nueva rama (`git checkout -b feature/nueva-caracteristica`).
+3.  Realiza tus cambios y haz commit (`git commit -m 'Añade nueva característica'`).
+4.  Haz push a la rama (`git push origin feature/nueva-caracteristica`).
+5.  Abre un Pull Request.
 
-para borrar secretos:
-git filter-repo --replace-text replace.txt --force
-git push --force --prune -u origin main
+Por favor, asegúrate de que tu código sigue las guías de estilo del proyecto y que los tests (si los hay) pasan.
+
+## 📄 Licencia
+
+Este proyecto está bajo la Licencia MIT. Consulta el archivo `LICENSE` para más detalles.
+(Nota: No tienes un archivo LICENSE, pero es una buena práctica añadir uno).
