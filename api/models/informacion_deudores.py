@@ -4,7 +4,8 @@ from sqlmodel import Field, SQLModel
 
 
 class InformacionDeudoresBase(SQLModel):
-    docconvfondo: str = Field(max_length=50)
+    idconvfondo: str = Field(max_length=50)
+    docconvfondo: str = Field(primary_key=True, max_length=50)
     id_usuario: str = Field(max_length=20)
     documento: str = Field(max_length=20)
     convocatoria: str = Field(max_length=20)
@@ -27,11 +28,10 @@ class InformacionDeudoresBase(SQLModel):
 
 class InformacionDeudores(InformacionDeudoresBase, table=True):
     __tablename__ = "informacion_deudores"
-    idconvfondo: str = Field(primary_key=True, max_length=50)
 
 
 class InformacionDeudoresCreate(InformacionDeudoresBase):
-    idconvfondo: str = Field(max_length=50)
+    pass
 
 
 class InformacionDeudoresUpdate(SQLModel):

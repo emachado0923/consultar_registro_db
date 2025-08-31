@@ -38,7 +38,7 @@ def get_informacion_deudores(
     summary="Actualizar información de un deudor",
 )
 def update_informacion_deudor(
-    idconvfondo: str,
+    docconvfondo: str,
     data: InformacionDeudoresUpdate,
     session: SessionDep,
     user: Dict[str, Any] = Depends(get_current_user),
@@ -46,7 +46,7 @@ def update_informacion_deudor(
     """
     Actualiza la información de un deudor específico.
     """
-    db_item = session.get(InformacionDeudores, idconvfondo)
+    db_item = session.get(InformacionDeudores, docconvfondo)
     if not db_item:
         raise HTTPException(status_code=404, detail="Registro no encontrado")
 
