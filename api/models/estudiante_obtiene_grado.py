@@ -15,6 +15,7 @@ class EstudianteObtieneGrado(SQLModel, table=True):
     periodo_grado: Optional[str] = Field(default=None, max_length=100)
     fecha_grado: Optional[date] = Field(default=None)
     renuncia_a_giros: str = Field(max_length=2)
+    radicado_pqrs: str = Field(max_length=100)
     a_cuantos_giros_renuncia: Optional[int] = Field(default=0)
     fecha_creacion: Optional[datetime] = Field(
         default=None,
@@ -36,3 +37,4 @@ class EstudianteObtieneGradoCreate(SQLModel):
     fecha_grado: Optional[date] = None
     renuncia_a_giros: str
     a_cuantos_giros_renuncia: Optional[int] = 0
+    radicado_pqrs: str

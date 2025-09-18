@@ -21,7 +21,7 @@ def add_estudiante_obtiene_grado(
     session: SessionDep,
     user: Dict[str, Any] = Depends(get_current_user),
 ) -> EstudianteObtieneGrado:
-    responsable_creacion = user.get("name", "Usuario desconocido")
+    responsable_creacion = user.get("full_name", "Usuario desconocido")
     new_item = EstudianteObtieneGrado.from_orm(
         data, {"responsable_creacion": responsable_creacion}
     )
