@@ -8,6 +8,7 @@ from sqlmodel import Field, SQLModel
 class RenunciaGiros(SQLModel, table=True):
     __tablename__ = "renuncia_giros"
 
+    id: Optional[int] = Field(default=None, primary_key=True)
     documento_beneficiario: str = Field(max_length=100)
     motivo_renuncia_giro: str = Field(max_length=100)
     periodo_al_que_renuncia_giro: Optional[str] = Field(default=None, max_length=100)
