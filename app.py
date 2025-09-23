@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from dotenv import load_dotenv
+import time
 
 from api.routers import (
 	auth,
@@ -40,4 +41,4 @@ app.include_router(renuncia_giros.router, prefix="/renuncia-giros")
 
 @app.get("/")
 def healthz():
-	return {"status": "ok"}
+	return {"status": "ok", "time": time.time()}
