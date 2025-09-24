@@ -5,6 +5,7 @@ import time
 from api.routers import (
 	auth,
 	consulta,
+	usuarios,
 	informacion_personal,
 	changelog,
 	renovaciones_extemporaneas,
@@ -25,6 +26,7 @@ app = FastAPI(title="API")
 
 app.include_router(auth.router, prefix="/auth")
 app.include_router(consulta.router, prefix="/consulta")
+app.include_router(usuarios.router, prefix="/usuarios")
 app.include_router(informacion_personal.router, prefix="/informacion_personal")
 app.include_router(changelog.router, prefix="/changelog")
 app.include_router(renovaciones_extemporaneas.router, prefix="/renovaciones-extemporaneas")
