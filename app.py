@@ -18,6 +18,7 @@ from api.routers import (
 	informacion_deudores,
 	suspension_temporal,
 	renuncia_giros,
+	ies_preg_posg,
 )
 
 load_dotenv()
@@ -39,6 +40,7 @@ app.include_router(renuncia_modalidad.router, prefix="/renuncia-modalidad")
 app.include_router(informacion_deudores.router, prefix="/informacion-deudores")
 app.include_router(suspension_temporal.router, prefix="/suspension-temporal")
 app.include_router(renuncia_giros.router, prefix="/renuncia-giros")
+app.include_router(ies_preg_posg.router, prefix="/ies-preg-posg")
 
 
 @app.get("/")
