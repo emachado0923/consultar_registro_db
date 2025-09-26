@@ -34,6 +34,17 @@ def list_ies(session: SessionDep):
 #         raise HTTPException(status_code=404, detail="Registro no encontrado")
 #     return item
 
+@router.get("/{nombre_ies}", response_model=IESPregPosg, summary="Obtener un registro por nombre_ies")
+def get_ies(nombre_ies: int, session: SessionDep, _: Dict[str, Any] = Depends(get_current_user)):
+    """
+    Obtiene un registro por su nombre_ies.
+    Requiere usuario autenticado.
+    """
+    item = session.get(IESPregPosg, nombre_ies)
+    if not item:
+        raise HTTPException(status_code=404, detail="Registro no encontrado")
+    return item
+
 
 @router.post("/agregar", response_model=IESPregPosg, status_code=status.HTTP_201_CREATED, summary="Crear un nuevo registro")
 def create_ies(

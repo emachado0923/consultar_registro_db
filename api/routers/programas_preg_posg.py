@@ -33,7 +33,7 @@ def get_programa(item_id: int, session: SessionDep, _: Dict[str, Any] = Depends(
 
 
 @router.get("/by-ies/{id_ies}", response_model=List[ProgramasPregPosg], summary="Obtener programas asociados a una IES (por id_ies)")
-def get_programas_by_ies(id_ies: str, session: SessionDep, _: Dict[str, Any] = Depends(get_current_user)):
+def get_programas_by_id_ies(id_ies: str, session: SessionDep, _: Dict[str, Any] = Depends(get_current_user)):
     """
     Devuelve solo los programas cuyo campo `id_ies` coincide con el parámetro.
     Útil para mostrar los programas de una IES concreta.
@@ -42,6 +42,15 @@ def get_programas_by_ies(id_ies: str, session: SessionDep, _: Dict[str, Any] = D
     results = session.exec(statement).all()
     return results
 
+# @router.get("/by-ies/{nombre_ies}", response_model=List[ProgramasPregPosg], summary="Obtener programas asociados a una IES (por nombre_ies)")
+# def get_programas_by_ies(nombre_ies: str, session: SessionDep, _: Dict[str, Any] = Depends(get_current_user)):
+#     """
+#     Devuelve solo los programas cuyo campo `nombre_ies` coincide con el parámetro.
+#     Útil para mostrar los programas de una IES concreta.
+#     """
+#     statement = select(ProgramasPregPosg).where(ProgramasPregPosg.nombre_ies == nombre_ies)
+#     results = session.exec(statement).all()
+#     return results
 
 @router.post("/agregar", response_model=ProgramasPregPosg, status_code=status.HTTP_201_CREATED, summary="Crear un nuevo programa")
 def create_programa(
