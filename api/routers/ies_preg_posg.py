@@ -35,7 +35,7 @@ def list_ies(session: SessionDep):
 #     return item
 
 @router.get("/{nombre_ies}", response_model=IESPregPosg, summary="Obtener un registro por nombre_ies")
-def get_ies(nombre_ies: int, session: SessionDep, _: Dict[str, Any] = Depends(get_current_user)):
+def get_ies(nombre_ies: str, session: SessionDep, _: Dict[str, Any] = Depends(get_current_user)):
     """
     Obtiene un registro por su nombre_ies.
     Requiere usuario autenticado.
