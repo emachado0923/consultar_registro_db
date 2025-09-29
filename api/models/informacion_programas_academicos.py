@@ -32,6 +32,7 @@ class InformacionProgramasAcademicos(SQLModel, table=True):
         },
     )
     responsable_actualizacion: Optional[str] = None
+    hizo_cambio_programa: Optional[str] = None
 
 
 class InformacionProgramasAcademicosUpdate(SQLModel):
@@ -50,3 +51,4 @@ class InformacionProgramasAcademicosUpdate(SQLModel):
     periodo_efectivo_cambio: Optional[str] = None
     radicado_pqrs_cambio: Optional[str] = None
     responsable_actualizacion: Optional[str] = None
+    hizo_cambio_programa: Optional[str] = None
