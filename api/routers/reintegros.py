@@ -90,6 +90,7 @@ def create_reintegro(
                 documento=db_reintegro.documento,
                 monto_girado=db_reintegro.monto_girado,
                 monto_reintegro=db_reintegro.monto_reintegro,
+                motivo_reintegro=db_reintegro.motivo_reintegro,
                 modalidad_reintegro=db_reintegro.modalidad_reintegro,
                 fecha_reporte=db_reintegro.fecha_reporte,
                 estado_correo=db_reintegro.estado_correo,
