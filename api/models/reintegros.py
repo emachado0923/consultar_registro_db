@@ -15,19 +15,12 @@ class Reintegros(SQLModel, table=True):
     documento: str = Field(nullable=False, max_length=20)
     monto_girado: Decimal = Field(nullable=False, max_digits=15, decimal_places=2)
     monto_reintegro: Decimal | None = Field(default=None, max_digits=15, decimal_places=2)
+    modalidad_reintegro: str | None = Field(default=None, max_length=50)
     fecha_reporte: date = Field(nullable=False)
     estado_correo: str | None = Field(default=None, max_length=50)
     certificado: str | None = Field(default=None, max_length=50)
     estado_fiducia: str | None = Field(default=None, max_length=50)
     fecha_efectuado: date | None = Field(default=None)
-    fecha_registro: datetime | None = Field(
-        default=None,
-        nullable=False,
-        sa_column_kwargs={
-            "server_default": text("CURRENT_TIMESTAMP"),
-            "onupdate": text("CURRENT_TIMESTAMP"),
-        },
-    )
 
 
 class ReintegrosCreate(SQLModel):
@@ -36,6 +29,7 @@ class ReintegrosCreate(SQLModel):
     documento: str
     monto_girado: float
     monto_reintegro: Optional[float] | None = None
+    modalidad_reintegro: str
     fecha_reporte: date
     estado_correo: str | None = None
     certificado: str | None = None
@@ -49,6 +43,7 @@ class ReintegrosUpdate(SQLModel):
     documento: str | None = None
     monto_girado: float | None = None
     monto_reintegro: Optional[float] | None = None
+    modalidad_reintegro: str
     fecha_reporte: date | None = None
     estado_correo: str | None = None
     certificado: str | None = None
@@ -62,12 +57,12 @@ class ReintegroResponse(BaseModel):
     documento: str
     monto_girado: float
     monto_reintegro: Optional[float] = None
+    modalidad_reintegro: str
     fecha_reporte: date
     estado_correo: Optional[str] = None
     certificado: Optional[str] = None
     estado_fiducia: Optional[str] = None
     fecha_efectuado: Optional[date] = None
-    fecha_registro: Optional[datetime] = None
 
     class Config:
         from_attributes = True

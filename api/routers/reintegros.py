@@ -91,12 +91,12 @@ def create_reintegro(
                 documento=db_reintegro.documento,
                 monto_girado=float(db_reintegro.monto_girado),
                 monto_reintegro=float(db_reintegro.monto_reintegro) if db_reintegro.monto_reintegro else None,
+                modalidad_reintegro=db_reintegro.modalidad_reintegro,
                 fecha_reporte=db_reintegro.fecha_reporte,
                 estado_correo=db_reintegro.estado_correo,
                 certificado=db_reintegro.certificado,
                 estado_fiducia=db_reintegro.estado_fiducia,
-                fecha_efectuado=db_reintegro.fecha_efectuado,
-                fecha_registro=db_reintegro.fecha_registro
+                fecha_efectuado=db_reintegro.fecha_efectuado
             )
             
             return response_data
