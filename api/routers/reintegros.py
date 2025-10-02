@@ -3,12 +3,17 @@ from typing import Any, Dict, List
 from fastapi import APIRouter, Depends, Query, HTTPException
 from pydantic import BaseModel
 from sqlmodel import Session, select
+import logging
+import traceback
+
+logger = logging.getLogger(__name__)
 
 from api.core.database import engine_analitica  # Ajusta según tu configuración
 from api.models.reintegros import (
     Reintegros,
     ReintegrosCreate,
     ReintegrosUpdate,
+    ReintegroResponse,
 )
 from api.routers.auth import get_current_user
 
@@ -58,7 +63,7 @@ def get_reintegro_by_id(
 
 @router.post(
     "/agrega-tabla-formulario/",
-    response_model=Reintegros,
+    response_model=ReintegroResponse,  # Usar el nuevo modelo de respuesta
     tags=["Reintegros"],
     summary="Crear un nuevo reintegro",
 )
@@ -66,14 +71,43 @@ def create_reintegro(
     reintegro: ReintegrosCreate,
     user: Dict[str, Any] = Depends(get_current_user),
 ):
-    with Session(engine_analitica) as session:
-        reintegro_data = reintegro.model_dump()
-        db_reintegro = Reintegros(**reintegro_data)
-        session.add(db_reintegro)
-        session.commit()
-        session.refresh(db_reintegro)
-        return db_reintegro
-
+    try:
+        logger.info(f"Intentando crear reintegro para documento: {reintegro.documento}")
+        
+        with Session(engine_analitica) as session:
+            reintegro_data = reintegro.model_dump()
+            db_reintegro = Reintegros(**reintegro_data)
+            session.add(db_reintegro)
+            session.commit()
+            session.refresh(db_reintegro)
+            
+            logger.info(f"Reintegro creado exitosamente con ID: {db_reintegro.id}")
+            
+            # Convertir a modelo de respuesta Pydantic
+            response_data = ReintegroResponse(
+                id=db_reintegro.id,
+                beneficiario=db_reintegro.beneficiario,
+                ies=db_reintegro.ies,
+                documento=db_reintegro.documento,
+                monto_girado=float(db_reintegro.monto_girado),
+                monto_reintegro=float(db_reintegro.monto_reintegro) if db_reintegro.monto_reintegro else None,
+                fecha_reporte=db_reintegro.fecha_reporte,
+                estado_correo=db_reintegro.estado_correo,
+                certificado=db_reintegro.certificado,
+                estado_fiducia=db_reintegro.estado_fiducia,
+                fecha_efectuado=db_reintegro.fecha_efectuado,
+                fecha_registro=db_reintegro.fecha_registro
+            )
+            
+            return response_data
+            
+    except Exception as e:
+        logger.error(f"Error creando reintegro: {str(e)}")
+        logger.error(traceback.format_exc())
+        raise HTTPException(
+            status_code=500,
+            detail=f"Error interno del servidor: {str(e)}"
+        )
 
 @router.put(
     "/actualiza-tabla-formulario/{reintegro_id}",
