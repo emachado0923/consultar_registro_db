@@ -20,6 +20,7 @@ from api.routers import (
 	renuncia_giros,
 	ies_preg_posg,
 	programas_preg_posg,
+	reintegros,
 )
 
 load_dotenv()
@@ -43,6 +44,7 @@ app.include_router(suspension_temporal.router, prefix="/suspension-temporal")
 app.include_router(renuncia_giros.router, prefix="/renuncia-giros")
 app.include_router(ies_preg_posg.router, prefix="/ies-preg-posg")
 app.include_router(programas_preg_posg.router, prefix="/programas-preg-posg")
+app.include_router(reintegros.router, prefix="/reintegros")
 
 
 @app.get("/")
