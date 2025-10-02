@@ -2,7 +2,6 @@ from datetime import date, datetime
 from sqlmodel import SQLModel, Field
 from sqlalchemy import text
 from typing import Optional
-from decimal import Decimal
 from pydantic import BaseModel
 
 
@@ -13,8 +12,8 @@ class Reintegros(SQLModel, table=True):
     beneficiario: str = Field(nullable=False, max_length=100)
     ies: str = Field(nullable=False, max_length=100)
     documento: str = Field(nullable=False, max_length=20)
-    monto_girado: Decimal = Field(nullable=False, max_digits=15, decimal_places=2)
-    monto_reintegro: Decimal | None = Field(default=None, max_digits=15, decimal_places=2)
+    monto_girado: int = Field(nullable=False)
+    monto_reintegro: int = Field(nullable=False)
     modalidad_reintegro: str | None = Field(default=None, max_length=50)
     fecha_reporte: date = Field(nullable=False)
     estado_correo: str | None = Field(default=None, max_length=50)
@@ -27,8 +26,8 @@ class ReintegrosCreate(SQLModel):
     beneficiario: str
     ies: str
     documento: str
-    monto_girado: float
-    monto_reintegro: Optional[float] | None = None
+    monto_girado: int
+    monto_reintegro: int
     modalidad_reintegro: str
     fecha_reporte: date
     estado_correo: str | None = None
@@ -41,28 +40,29 @@ class ReintegrosUpdate(SQLModel):
     beneficiario: str | None = None
     ies: str | None = None
     documento: str | None = None
-    monto_girado: float | None = None
-    monto_reintegro: Optional[float] | None = None
-    modalidad_reintegro: str
+    monto_girado: int | None = None
+    monto_reintegro: int | None = None
+    modalidad_reintegro: str | None = None
     fecha_reporte: date | None = None
     estado_correo: str | None = None
     certificado: str | None = None
     estado_fiducia: str | None = None
     fecha_efectuado: date | None = None
 
+
 class ReintegroResponse(BaseModel):
     id: int
     beneficiario: str
     ies: str
     documento: str
-    monto_girado: float
-    monto_reintegro: Optional[float] = None
-    modalidad_reintegro: str
+    monto_girado: int
+    monto_reintegro: int
+    modalidad_reintegro: str | None
     fecha_reporte: date
-    estado_correo: Optional[str] = None
-    certificado: Optional[str] = None
-    estado_fiducia: Optional[str] = None
-    fecha_efectuado: Optional[date] = None
+    estado_correo: str | None = None
+    certificado: str | None = None
+    estado_fiducia: str | None = None
+    fecha_efectuado: date | None = None
 
     class Config:
         from_attributes = True

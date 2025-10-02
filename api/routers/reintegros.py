@@ -8,7 +8,7 @@ import traceback
 
 logger = logging.getLogger(__name__)
 
-from api.core.database import engine_analitica  # Ajusta según tu configuración
+from api.core.database import engine_analitica
 from api.models.reintegros import (
     Reintegros,
     ReintegrosCreate,
@@ -63,7 +63,7 @@ def get_reintegro_by_id(
 
 @router.post(
     "/agrega-tabla-formulario/",
-    response_model=ReintegroResponse,  # Usar el nuevo modelo de respuesta
+    response_model=ReintegroResponse,
     tags=["Reintegros"],
     summary="Crear un nuevo reintegro",
 )
@@ -83,14 +83,13 @@ def create_reintegro(
             
             logger.info(f"Reintegro creado exitosamente con ID: {db_reintegro.id}")
             
-            # Convertir a modelo de respuesta Pydantic
             response_data = ReintegroResponse(
                 id=db_reintegro.id,
                 beneficiario=db_reintegro.beneficiario,
                 ies=db_reintegro.ies,
                 documento=db_reintegro.documento,
-                monto_girado=float(db_reintegro.monto_girado),
-                monto_reintegro=float(db_reintegro.monto_reintegro) if db_reintegro.monto_reintegro else None,
+                monto_girado=db_reintegro.monto_girado,
+                monto_reintegro=db_reintegro.monto_reintegro,
                 modalidad_reintegro=db_reintegro.modalidad_reintegro,
                 fecha_reporte=db_reintegro.fecha_reporte,
                 estado_correo=db_reintegro.estado_correo,
@@ -108,6 +107,7 @@ def create_reintegro(
             status_code=500,
             detail=f"Error interno del servidor: {str(e)}"
         )
+
 
 @router.put(
     "/actualiza-tabla-formulario/{reintegro_id}",
@@ -159,6 +159,7 @@ def delete_reintegro(
 
 class DocumentoReintegro(BaseModel):
     documento: str
+
 
 @router.get(
     "/consulta-por-fecha/",
