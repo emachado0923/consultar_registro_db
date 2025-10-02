@@ -21,6 +21,7 @@ class RenovacionesExtemporaneas(SQLModel, table=True):
             "onupdate": text("CURRENT_TIMESTAMP"),
         },
     )
+    motivo_renovacion_extemporanea: str
 
 
 class RenovacionesExtemporaneasCreate(SQLModel):
@@ -30,6 +31,7 @@ class RenovacionesExtemporaneasCreate(SQLModel):
     fecha_fin_renovacion: date
     codigo_fondo_activacion: str
     radicado_pqrs: str
+    motivo_renovacion_extemporanea: str
 
 
 class RenovacionesExtemporaneasUpdate(SQLModel):
@@ -40,3 +42,4 @@ class RenovacionesExtemporaneasUpdate(SQLModel):
     codigo_fondo_activacion: str | None = None
     radicado_pqrs: str | None = None
     responsable_activacion: str | None = None
+    motivo_renovacion_extemporanea: str
