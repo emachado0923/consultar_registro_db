@@ -18,6 +18,15 @@ DEFAULT_CONVOCATORIA_DB = {
     "PORT": "3306",
 }
 
+#Cambiar por la otra base de datos cuando se haga el deploy (hosti)
+DEFAULT_DTF_FINANCIERA_DB = {
+    "HOST": "34.70.163.123",
+    "USER": "analitica",
+    "PASSWORD": "I|{I{.LSAMJhAhKv",
+    "DATABASE": "dtf_financiera",
+    "PORT": "3306",
+}
+
 
 def _build_mysql_url(prefix: str, defaults: Dict[str, str]) -> str:
     """Construye la URL de conexión a MySQL usando env con fallback a defaults.
@@ -40,6 +49,7 @@ def _build_mysql_url(prefix: str, defaults: Dict[str, str]) -> str:
 
 ANALITICA_DB_URL = _build_mysql_url("LOGIN_DB", DEFAULT_ANALITICA_DB)
 CONVOCATORIA_DB_URL = _build_mysql_url("APP_DB", DEFAULT_CONVOCATORIA_DB)
+DTF_FINANCIERA_DB_URL = _build_mysql_url("DTF_DB", DEFAULT_DTF_FINANCIERA_DB)
 
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
 JWT_SECRET = os.getenv("JWT_SECRET", "JWT_VALUE")
