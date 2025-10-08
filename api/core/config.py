@@ -20,7 +20,7 @@ DEFAULT_CONVOCATORIA_DB = {
 
 #Cambiar por la otra base de datos cuando se haga el deploy (hosti)
 DEFAULT_DTF_FINANCIERA_DB = {
-    "HOST": "34.70.163.123",
+    "HOST": "10.120.64.32",
     "USER": "analitica",
     "PASSWORD": "I|{I{.LSAMJhAhKv",
     "DATABASE": "dtf_financiera",

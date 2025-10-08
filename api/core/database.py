@@ -15,6 +15,6 @@ def get_session_convocatoria():
     with Session(engine_convocatoria) as session:
         yield session
 
-def get_session_dtf_financiera():  # ← NUEVA FUNCIÓN
+def get_session_dtf_financiera():
     with Session(engine_dtf_financiera) as session:
         yield session
