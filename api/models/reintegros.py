@@ -18,7 +18,7 @@ class Reintegros(SQLModel, table=True):
     monto_reintegro: int = Field(nullable=False)
     motivo_reintegro: str = Field(nullable=False, max_length=50)
     modalidad_reintegro: str | None = Field(default=None, max_length=50)
-    fecha_reporte: date = Field(nullable=False)
+    fecha_inicio_proceso: date = Field(nullable=False)
     estado_correo: str | None = Field(default=None, max_length=50)
     certificado: str | None = Field(default=None, max_length=50)
     estado_fiducia: str | None = Field(default=None, max_length=50)
@@ -35,7 +35,7 @@ class ReintegrosCreate(SQLModel):
     monto_reintegro: int
     motivo_reintegro: str
     modalidad_reintegro: str
-    fecha_reporte: date
+    fecha_inicio_proceso: date
     estado_correo: str | None = None
     certificado: str | None = None
     estado_fiducia: str | None = None
@@ -52,7 +52,7 @@ class ReintegrosUpdate(SQLModel):
     monto_reintegro: int | None = None
     motivo_reintegro: str | None = None
     modalidad_reintegro: str | None = None
-    fecha_reporte: date | None = None
+    fecha_inicio_proceso: date | None = None
     estado_correo: str | None = None
     certificado: str | None = None
     estado_fiducia: str | None = None
@@ -70,7 +70,7 @@ class ReintegroResponse(BaseModel):
     monto_reintegro: int
     motivo_reintegro: str
     modalidad_reintegro: str | None
-    fecha_reporte: date
+    fecha_inicio_proceso: date
     estado_correo: str | None = None
     certificado: str | None = None
     estado_fiducia: str | None = None

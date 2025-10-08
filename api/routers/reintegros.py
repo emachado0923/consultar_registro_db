@@ -39,7 +39,7 @@ def get_reintegros(
         if documento:
             statement = statement.where(Reintegros.documento == documento)
             
-        statement = statement.order_by(Reintegros.fecha_reporte.desc())
+        statement = statement.order_by(Reintegros.fecha_inicio_proceso.desc())
         results = session.exec(statement).all()
         return results
 
@@ -94,7 +94,7 @@ def create_reintegro(
                 monto_reintegro=db_reintegro.monto_reintegro,
                 motivo_reintegro=db_reintegro.motivo_reintegro,
                 modalidad_reintegro=db_reintegro.modalidad_reintegro,
-                fecha_reporte=db_reintegro.fecha_reporte,
+                fecha_inicio_proceso=db_reintegro.fecha_inicio_proceso,
                 estado_correo=db_reintegro.estado_correo,
                 certificado=db_reintegro.certificado,
                 estado_fiducia=db_reintegro.estado_fiducia,
@@ -177,9 +177,9 @@ def get_reintegros_por_fecha(
 ):
     with Session(engine_analitica) as session:
         statement = select(Reintegros).where(
-            Reintegros.fecha_reporte >= fecha_desde,
-            Reintegros.fecha_reporte <= fecha_hasta
-        ).order_by(Reintegros.fecha_reporte.desc())
+            Reintegros.fecha_inicio_proceso >= fecha_desde,
+            Reintegros.fecha_inicio_proceso <= fecha_hasta
+        ).order_by(Reintegros.fecha_inicio_proceso.desc())
         
         results = session.exec(statement).all()
         return results
