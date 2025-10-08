@@ -42,24 +42,24 @@ def obtener_vista_giros(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar vista: {str(e)}")
 
-@router.get("/documento-periodo/{documento}/{periodo}", summary="Buscar por documento y periodo", description="Retorna registros por combinación específica de documento y periodo")
-def obtener_por_documento_periodo(
+@router.get("/documento/{documento}/periodo-academico/{periodo_academico}", summary="Buscar por documento y periodo académico", description="Retorna registros específicos por documento y periodo académico")
+def obtener_por_documento_periodo_academico(
     documento: str,
-    periodo: str,
+    periodo_academico: str,  # ← CAMBIADO AQUÍ
     db: Session = Depends(get_session_dtf_financiera),
     _: Dict[str, Any] = Depends(get_current_user)
 ):
     try:
         statement = select(VwGirosGeneralHistoricoIes).where(
             VwGirosGeneralHistoricoIes.documento == documento,
-            VwGirosGeneralHistoricoIes.periodo == periodo
+            VwGirosGeneralHistoricoIes.periodo_academico == periodo_academico
         )
         resultados = db.exec(statement).all()
         
         if not resultados:
             raise HTTPException(
                 status_code=404, 
-                detail=f"No se encontraron registros para documento {documento} y periodo {periodo}"
+                detail=f"No se encontraron registros para documento {documento} y periodo académico {periodo_academico}"
             )
         return resultados
         
@@ -67,20 +67,3 @@ def obtener_por_documento_periodo(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
-
-@router.get("/estadisticas/resumen", summary="Estadísticas generales", description="Retorna estadísticas y resumen de los datos")
-def obtener_estadisticas(db: Session = Depends(get_session_dtf_financiera), _: Dict[str, Any] = Depends(get_current_user)):
-    try:
-        # Conteo por estado
-        statement = select(VwGirosGeneralHistoricoIes.estado).distinct()
-        estados = db.exec(statement).all()
-        
-        resumen = {
-            "total_estados": len(estados),
-            "estados_disponibles": estados,
-            "total_registros": db.exec(select(VwGirosGeneralHistoricoIes)).all().__len__()
-        }
-        return resumen
-        
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error al obtener estadísticas: {str(e)}")
