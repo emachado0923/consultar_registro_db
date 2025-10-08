@@ -3,16 +3,16 @@ from sqlmodel import Session, select
 from api.core.database import get_session_dtf_financiera
 from api.models.vw_giros_general_historico_ies import VwGirosGeneralHistoricoIes
 
-router = APIRouter()
+router = APIRouter(tags=["Vista Giros General Historico IES"])
 
-@router.get("/")
+@router.get("/", summary="Obtener todos los registros", description="Retorna todos los registros de la vista con paginación y filtros")
 def obtener_vista_giros(
     skip: int = 0,
     limit: int = 100,
-    documento: str = None,
-    estado: str = None,
-    fondo: str = None,
-    ies: str = None,
+    documento: str = Query(None, description="Filtrar por documento"),
+    estado: str = Query(None, description="Filtrar por estado"),
+    fondo: str = Query(None, description="Filtrar por fondo"),
+    ies: str = Query(None, description="Filtrar por IES"),
     db: Session = Depends(get_session_dtf_financiera)
 ):
     try:
@@ -37,7 +37,7 @@ def obtener_vista_giros(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar vista: {str(e)}")
 
-@router.get("/documento/{documento}")
+@router.get("/documento/{documento}", summary="Buscar por documento", description="Retorna un registro específico por número de documento")
 def obtener_por_documento(
     documento: str, 
     db: Session = Depends(get_session_dtf_financiera)
@@ -55,7 +55,7 @@ def obtener_por_documento(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
 
-@router.get("/estadisticas/resumen")
+@router.get("/estadisticas/resumen", summary="Estadísticas generales", description="Retorna estadísticas y resumen de los datos")
 def obtener_estadisticas(db: Session = Depends(get_session_dtf_financiera)):
     try:
         # Conteo por estado
