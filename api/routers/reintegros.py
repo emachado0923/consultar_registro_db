@@ -89,6 +89,8 @@ def create_reintegro(
                 ies=db_reintegro.ies,
                 documento=db_reintegro.documento,
                 monto_girado=db_reintegro.monto_girado,
+                monto_girado_sostenimiento=db_reintegro.monto_girado_sostenimiento,
+                monto_girado_matricula=db_reintegro.monto_girado_matricula,
                 monto_reintegro=db_reintegro.monto_reintegro,
                 motivo_reintegro=db_reintegro.motivo_reintegro,
                 modalidad_reintegro=db_reintegro.modalidad_reintegro,

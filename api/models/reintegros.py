@@ -13,6 +13,8 @@ class Reintegros(SQLModel, table=True):
     ies: str = Field(nullable=False, max_length=100)
     documento: str = Field(nullable=False, max_length=20)
     monto_girado: int = Field(nullable=False)
+    monto_girado_sostenimiento: int = Field(default=None)
+    monto_girado_matricula: int = Field(default=None)
     monto_reintegro: int = Field(nullable=False)
     motivo_reintegro: str = Field(nullable=False, max_length=50)
     modalidad_reintegro: str | None = Field(default=None, max_length=50)
@@ -28,6 +30,8 @@ class ReintegrosCreate(SQLModel):
     ies: str
     documento: str
     monto_girado: int
+    monto_girado_sostenimiento: int
+    monto_girado_matricula: int
     monto_reintegro: int
     motivo_reintegro: str
     modalidad_reintegro: str
@@ -43,6 +47,8 @@ class ReintegrosUpdate(SQLModel):
     ies: str | None = None
     documento: str | None = None
     monto_girado: int | None = None
+    monto_girado_sostenimiento: int | None = None
+    monto_girado_matricula: int | None = None
     monto_reintegro: int | None = None
     motivo_reintegro: str | None = None
     modalidad_reintegro: str | None = None
@@ -59,6 +65,8 @@ class ReintegroResponse(BaseModel):
     ies: str
     documento: str
     monto_girado: int
+    monto_girado_sostenimiento: int
+    monto_girado_matricula: int
     monto_reintegro: int
     motivo_reintegro: str
     modalidad_reintegro: str | None
