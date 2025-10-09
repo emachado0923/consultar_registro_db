@@ -45,7 +45,7 @@ def obtener_vista_giros(
 @router.get("/documento/{documento}/periodo-academico/{periodo_academico}", summary="Buscar por documento y periodo académico", description="Retorna registros específicos por documento y periodo académico")
 def obtener_por_documento_periodo_academico(
     documento: str,
-    periodo_academico: str,  # ← CAMBIADO AQUÍ
+    periodo_academico: str,
     db: Session = Depends(get_session_dtf_financiera),
     _: Dict[str, Any] = Depends(get_current_user)
 ):
@@ -62,6 +62,59 @@ def obtener_por_documento_periodo_academico(
                 detail=f"No se encontraron registros para documento {documento} y periodo académico {periodo_academico}"
             )
         return resultados
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
+    
+@router.get("/filtros-especificos/", summary="Consulta por convocatoria, fondo y periodo académico", description="Retorna registros filtrados por convocatoria, fondo y periodo académico")
+def consultar_por_filtros_avanzados(
+    convocatoria: str = Query(..., description="Nombre de la convocatoria (requerido)"),
+    fondo: str = Query(..., description="Nombre del fondo (requerido)"),
+    periodo_academico: str = Query(..., description="Periodo académico (requerido)"),
+    estado: str = Query(None, description="Filtrar por estado (opcional)"),
+    ies: str = Query(None, description="Filtrar por IES (opcional)"),
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(get_session_dtf_financiera),
+    current_user: dict = Depends(get_current_user)
+):
+    try:
+        statement = select(VwGirosGeneralHistoricoIes).where(
+            VwGirosGeneralHistoricoIes.convocatoria == convocatoria,
+            VwGirosGeneralHistoricoIes.fondo == fondo,
+            VwGirosGeneralHistoricoIes.periodo_academico == periodo_academico
+        )
+        
+        # Filtros opcionales adicionales
+        if estado:
+            statement = statement.where(VwGirosGeneralHistoricoIes.estado == estado)
+        if ies:
+            statement = statement.where(VwGirosGeneralHistoricoIes.ies.contains(ies))
+        
+        # Aplicar paginación
+        statement = statement.offset(skip).limit(limit)
+        
+        resultados = db.exec(statement).all()
+        
+        if not resultados:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No se encontraron registros para convocatoria '{convocatoria}', fondo '{fondo}' y periodo académico '{periodo_academico}'"
+            )
+            
+        return {
+            "filtros_aplicados": {
+                "convocatoria": convocatoria,
+                "fondo": fondo,
+                "periodo_academico": periodo_academico,
+                "estado": estado,
+                "ies": ies
+            },
+            "total_resultados": len(resultados),
+            "resultados": resultados
+        }
         
     except HTTPException:
         raise
