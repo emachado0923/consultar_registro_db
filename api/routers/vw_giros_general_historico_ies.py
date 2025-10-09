@@ -70,7 +70,7 @@ def obtener_por_documento_periodo_academico(
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
 
 
-#from sqlalchemy import text
+from sqlalchemy import text
 
 @router.get("/filtros-completo/", summary="Consulta por convocatoria, fondo, documento y periodo académico (opcional)", description="Retorna registros filtrados por convocatoria, fondo, documento y periodo académico (opcional)")
 def consultar_por_filtros_avanzados(
@@ -82,35 +82,46 @@ def consultar_por_filtros_avanzados(
     _: Dict[str, Any] = Depends(get_current_user)
 ):
     try:
-        # Construir la consulta con SQLModel
-        statement = select(VwGirosGeneralHistoricoIes).where(
-            VwGirosGeneralHistoricoIes.convocatoria == convocatoria,
-            VwGirosGeneralHistoricoIes.fondo == fondo,
-            VwGirosGeneralHistoricoIes.documento == documento
-        )
+        # Construir query SQL directo
+        sql_query = """
+            SELECT * FROM vw_giros_general_historico_ies 
+            WHERE convocatoria = :convocatoria
+            AND fondo = :fondo 
+            AND documento = :documento
+        """
         
+        # Agregar filtro opcional
         if periodo_academico:
-            statement = statement.where(VwGirosGeneralHistoricoIes.periodo_academico == periodo_academico)
+            sql_query += " AND periodo_academico = :periodo_academico"
         
-        resultados = db.exec(statement).all()
+        # Crear el objeto text
+        query_text = text(sql_query)
         
-        if not resultados:
+        # Preparar parámetros
+        query_params = {
+            "convocatoria": convocatoria,
+            "fondo": fondo,
+            "documento": documento
+        }
+        if periodo_academico:
+            query_params["periodo_academico"] = periodo_academico
+        
+        # Ejecutar la consulta CORRECTAMENTE - sin pasar params como segundo argumento
+        result = db.execute(query_text, query_params)
+        rows = result.fetchall()
+        
+        # Convertir a diccionarios
+        resultados_dict = []
+        for row in rows:
+            resultados_dict.append(dict(row._mapping))
+        
+        if not resultados_dict:
             if periodo_academico:
                 detail_msg = f"No se encontraron registros para convocatoria '{convocatoria}', fondo '{fondo}', documento '{documento}' y periodo académico '{periodo_academico}'"
             else:
                 detail_msg = f"No se encontraron registros para convocatoria '{convocatoria}', fondo '{fondo}' y documento '{documento}'"
             
             raise HTTPException(status_code=404, detail=detail_msg)
-        
-        # Convertir EXPLÍCITAMENTE a diccionarios para evitar problemas de cache
-        resultados_dict = []
-        for resultado in resultados:
-            # Crear un diccionario nuevo para cada registro
-            resultado_dict = {}
-            for column_name in VwGirosGeneralHistoricoIes.__annotations__.keys():
-                if hasattr(resultado, column_name):
-                    resultado_dict[column_name] = getattr(resultado, column_name)
-            resultados_dict.append(resultado_dict)
             
         return {
             "filtros_aplicados": {
@@ -127,7 +138,7 @@ def consultar_por_filtros_avanzados(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
-            
+                
 @router.get("/resumen-documento/{documento}", tags=["Consulta"], summary="Consultar convocatorias y fondos de un beneficiario")
 def consulta_convocatorias_fondos(
     documento: str, 
