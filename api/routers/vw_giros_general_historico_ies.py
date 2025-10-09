@@ -68,7 +68,7 @@ def obtener_por_documento_periodo_academico(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
     
-@router.get("/filtros-especificos/", summary="Consulta por convocatoria, fondo y periodo académico", description="Retorna registros filtrados por convocatoria, fondo y periodo académico")
+@router.get("/filtros-convocatoria-fondo-periodoAcademico/", summary="Consulta por convocatoria, fondo y periodo académico", description="Retorna registros filtrados por convocatoria, fondo y periodo académico")
 def consultar_por_filtros_avanzados(
     convocatoria: str = Query(..., description="Nombre de la convocatoria (requerido)"),
     fondo: str = Query(..., description="Nombre del fondo (requerido)"),
@@ -84,12 +84,6 @@ def consultar_por_filtros_avanzados(
             VwGirosGeneralHistoricoIes.fondo == fondo,
             VwGirosGeneralHistoricoIes.periodo_academico == periodo_academico
         )
-        
-        # Filtros opcionales adicionales
-        if estado:
-            statement = statement.where(VwGirosGeneralHistoricoIes.estado == estado)
-        if ies:
-            statement = statement.where(VwGirosGeneralHistoricoIes.ies.contains(ies))
         
         # Aplicar paginación
         statement = statement.offset(skip).limit(limit)
@@ -107,8 +101,6 @@ def consultar_por_filtros_avanzados(
                 "convocatoria": convocatoria,
                 "fondo": fondo,
                 "periodo_academico": periodo_academico,
-                "estado": estado,
-                "ies": ies
             },
             "total_resultados": len(resultados),
             "resultados": resultados
