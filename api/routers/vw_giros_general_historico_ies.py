@@ -73,12 +73,10 @@ def consultar_por_filtros_avanzados(
     convocatoria: str = Query(..., description="Nombre de la convocatoria (requerido)"),
     fondo: str = Query(..., description="Nombre del fondo (requerido)"),
     periodo_academico: str = Query(..., description="Periodo académico (requerido)"),
-    estado: str = Query(None, description="Filtrar por estado (opcional)"),
-    ies: str = Query(None, description="Filtrar por IES (opcional)"),
     skip: int = 0,
     limit: int = 100,
     db: Session = Depends(get_session_dtf_financiera),
-    current_user: dict = Depends(get_current_user)
+    _: Dict[str, Any] = Depends(get_current_user)
 ):
     try:
         statement = select(VwGirosGeneralHistoricoIes).where(
