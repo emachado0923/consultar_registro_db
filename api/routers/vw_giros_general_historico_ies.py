@@ -68,32 +68,42 @@ def obtener_por_documento_periodo_academico(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
-    
+
+
+from sqlalchemy import text
+
 @router.get("/filtros-completo/", summary="Consulta por convocatoria, fondo, documento y periodo académico (opcional)", description="Retorna registros filtrados por convocatoria, fondo, documento y periodo académico (opcional)")
 def consultar_por_filtros_avanzados(
     convocatoria: str = Query(..., description="Nombre de la convocatoria (requerido)"),
     fondo: str = Query(..., description="Nombre del fondo (requerido)"),
     documento: str = Query(..., description="Número de documento (requerido)"),
-    periodo_academico: str = Query(None, description="Periodo académico (opcional)"),  # ← CAMBIADO A OPCIONAL
+    periodo_academico: str = Query(None, description="Periodo académico (opcional)"),
     db: Session = Depends(get_session_dtf_financiera),
     _: Dict[str, Any] = Depends(get_current_user)
 ):
     try:
-        # Construir la consulta base con filtros requeridos
-        statement = select(VwGirosGeneralHistoricoIes).where(
-            VwGirosGeneralHistoricoIes.convocatoria == convocatoria,
-            VwGirosGeneralHistoricoIes.fondo == fondo,
-            VwGirosGeneralHistoricoIes.documento == documento
-        )
+        # Construir query SQL directo
+        query_base = """
+            SELECT * FROM vw_giros_general_historico_ies 
+            WHERE convocatoria = :convocatoria 
+            AND fondo = :fondo 
+            AND documento = :documento
+        """
+        params = {
+            "convocatoria": convocatoria,
+            "fondo": fondo,
+            "documento": documento
+        }
         
-        # Agregar filtro de periodo_academico solo si se proporciona
         if periodo_academico:
-            statement = statement.where(VwGirosGeneralHistoricoIes.periodo_academico == periodo_academico)
+            query_base += " AND periodo_academico = :periodo_academico"
+            params["periodo_academico"] = periodo_academico
         
-        resultados = db.exec(statement).all()
+        query = text(query_base)
+        resultados = db.exec(query, params).all()
+        resultados_dict = [dict(row._mapping) for row in resultados]
         
-        if not resultados:
-            # Mensaje de error que cambia según si se proporcionó periodo_academico o no
+        if not resultados_dict:
             if periodo_academico:
                 detail_msg = f"No se encontraron registros para convocatoria '{convocatoria}', fondo '{fondo}', documento '{documento}' y periodo académico '{periodo_academico}'"
             else:
@@ -106,10 +116,10 @@ def consultar_por_filtros_avanzados(
                 "convocatoria": convocatoria,
                 "fondo": fondo,
                 "documento": documento,
-                "periodo_academico": periodo_academico  # Será None si no se proporcionó
+                "periodo_academico": periodo_academico
             },
-            "total_resultados": len(resultados),
-            "resultados": resultados
+            "total_resultados": len(resultados_dict),
+            "resultados": resultados_dict
         }
         
     except HTTPException:
