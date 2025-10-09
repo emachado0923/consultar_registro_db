@@ -71,8 +71,9 @@ def obtener_por_documento_periodo_academico(
 
 
 from sqlalchemy import text
+from collections import defaultdict
 
-@router.get("/filtros-completo/", summary="Consulta por convocatoria, fondo, documento y periodo académico (opcional)", description="Retorna registros filtrados por convocatoria, fondo, documento y periodo académico (opcional)")
+@router.get("/filtros-completo/", summary="Consulta por convocatoria, fondo, documento y periodo académico (opcional)", description="Retorna registros agrupados por documento, convocatoria y fondo")
 def consultar_por_filtros_avanzados(
     convocatoria: str = Query(..., description="Nombre de la convocatoria (requerido)"),
     fondo: str = Query(..., description="Nombre del fondo (requerido)"),
@@ -82,32 +83,23 @@ def consultar_por_filtros_avanzados(
     _: Dict[str, Any] = Depends(get_current_user)
 ):
     try:
-        # Construir query SQL directo
-        sql_query = """
-            SELECT * FROM vw_giros_general_historico_ies 
-            WHERE convocatoria = :convocatoria
-            AND fondo = :fondo 
-            AND documento = :documento
-        """
+        # Usar SQLModel para construir la consulta
+        statement = select(VwGirosGeneralHistoricoIes).where(
+            VwGirosGeneralHistoricoIes.convocatoria == convocatoria,
+            VwGirosGeneralHistoricoIes.fondo == fondo,
+            VwGirosGeneralHistoricoIes.documento == documento
+        )
         
-        # Agregar filtro opcional
         if periodo_academico:
-            sql_query += " AND periodo_academico = :periodo_academico"
+            statement = statement.where(VwGirosGeneralHistoricoIes.periodo_academico == periodo_academico)
         
-        # Crear el objeto text
-        query_text = text(sql_query)
+        # Ejecutar con db.execute (compilando el statement a SQL)
+        compiled_statement = statement.compile(
+            bind=db.get_bind(), 
+            compile_kwargs={"literal_binds": True}
+        )
         
-        # Preparar parámetros
-        query_params = {
-            "convocatoria": convocatoria,
-            "fondo": fondo,
-            "documento": documento
-        }
-        if periodo_academico:
-            query_params["periodo_academico"] = periodo_academico
-        
-        # Ejecutar la consulta
-        result = db.execute(query_text, query_params)
+        result = db.execute(text(str(compiled_statement)))
         rows = result.fetchall()
         
         # Convertir a diccionarios
@@ -122,15 +114,68 @@ def consultar_por_filtros_avanzados(
                 detail_msg = f"No se encontraron registros para convocatoria '{convocatoria}', fondo '{fondo}' y documento '{documento}'"
             
             raise HTTPException(status_code=404, detail=detail_msg)
+        
+        # Agrupar los resultados por documento, convocatoria y fondo
+        grupos = defaultdict(lambda: {
+            "documento": None,
+            "nombre": None,
+            "convocatoria": None,
+            "fondo": None,
+            "periodos_academicos": [],
+            "ies": [],
+            "programas": [],
+            "modalidades": [],
+            "estados": [],
+            "valores_girar": [],
+            "fechas_registro": [],
+            "total_registros": 0
+        })
+        
+        for registro in resultados_dict:
+            # Crear clave única para el grupo
+            clave = (registro["documento"], registro["convocatoria"], registro["fondo"])
             
-        # Solo devolver los resultados
-        return resultados_dict
+            # Actualizar datos del grupo
+            grupo = grupos[clave]
+            grupo["documento"] = registro["documento"]
+            grupo["nombre"] = registro["nombre"]
+            grupo["convocatoria"] = registro["convocatoria"]
+            grupo["fondo"] = registro["fondo"]
+            
+            # Agregar datos a los arrays
+            if registro.get("periodo_academico"):
+                grupo["periodos_academicos"].append(registro["periodo_academico"])
+            
+            if registro.get("ies"):
+                grupo["ies"].append(registro["ies"])
+            
+            if registro.get("programa"):
+                grupo["programas"].append(registro["programa"])
+            
+            if registro.get("modalidad"):
+                grupo["modalidades"].append(registro["modalidad"])
+            
+            if registro.get("estado"):
+                grupo["estados"].append(registro["estado"])
+            
+            if registro.get("valor_girar") is not None:
+                grupo["valores_girar"].append(registro["valor_girar"])
+            
+            if registro.get("fecha_registro"):
+                grupo["fechas_registro"].append(registro["fecha_registro"])
+            
+            grupo["total_registros"] += 1
+        
+        # Convertir a lista
+        resultados_agrupados = list(grupos.values())
+        
+        return resultados_agrupados
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
-                    
+
 @router.get("/resumen-documento/{documento}", tags=["Consulta"], summary="Consultar convocatorias y fondos de un beneficiario")
 def consulta_convocatorias_fondos(
     documento: str, 
