@@ -89,31 +89,22 @@ def consultar_por_filtros_avanzados(
             AND fondo = :fondo 
             AND documento = :documento
         """
-        
-        # Agregar filtro opcional
-        if periodo_academico:
-            sql_query += " AND periodo_academico = :periodo_academico"
-        
-        # Crear el objeto text
-        query_text = text(sql_query)
-        
-        # Preparar parámetros
-        query_params = {
+        params = {
             "convocatoria": convocatoria,
             "fondo": fondo,
             "documento": documento
         }
-        if periodo_academico:
-            query_params["periodo_academico"] = periodo_academico
         
-        # Ejecutar la consulta
-        result = db.exec(query_text, query_params)
+        if periodo_academico:
+            sql_query += " AND periodo_academico = :periodo_academico"
+            params["periodo_academico"] = periodo_academico
+        
+        # Ejecutar correctamente con SQLModel
+        result = db.exec(text(sql_query), params)
         rows = result.all()
         
         # Convertir a diccionarios
-        resultados_dict = []
-        for row in rows:
-            resultados_dict.append(dict(row._mapping))
+        resultados_dict = [dict(row._mapping) for row in rows]
         
         if not resultados_dict:
             if periodo_academico:
@@ -138,7 +129,7 @@ def consultar_por_filtros_avanzados(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
-    
+        
 @router.get("/resumen-documento/{documento}", tags=["Consulta"], summary="Consultar convocatorias y fondos de un beneficiario")
 def consulta_convocatorias_fondos(
     documento: str, 
