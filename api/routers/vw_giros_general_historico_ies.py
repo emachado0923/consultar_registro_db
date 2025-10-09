@@ -1,5 +1,6 @@
 from typing import Annotated, Any, Dict, List, Optional
 
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select, distinct
 from api.core.database import get_session_dtf_financiera
