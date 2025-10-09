@@ -83,25 +83,37 @@ def consultar_por_filtros_avanzados(
 ):
     try:
         # Construir query SQL directo
-        query_base = """
+        sql_query = """
             SELECT * FROM vw_giros_general_historico_ies 
-            WHERE convocatoria = :convocatoria 
+            WHERE convocatoria = :convocatoria
             AND fondo = :fondo 
             AND documento = :documento
         """
-        params = {
+        
+        # Agregar filtro opcional
+        if periodo_academico:
+            sql_query += " AND periodo_academico = :periodo_academico"
+        
+        # Crear el objeto text
+        query_text = text(sql_query)
+        
+        # Preparar parámetros
+        query_params = {
             "convocatoria": convocatoria,
             "fondo": fondo,
             "documento": documento
         }
-        
         if periodo_academico:
-            query_base += " AND periodo_academico = :periodo_academico"
-            params["periodo_academico"] = periodo_academico
+            query_params["periodo_academico"] = periodo_academico
         
-        query = text(query_base)
-        resultados = db.exec(query, params).all()
-        resultados_dict = [dict(row._mapping) for row in resultados]
+        # Ejecutar la consulta
+        result = db.exec(query_text, query_params)
+        rows = result.all()
+        
+        # Convertir a diccionarios
+        resultados_dict = []
+        for row in rows:
+            resultados_dict.append(dict(row._mapping))
         
         if not resultados_dict:
             if periodo_academico:
@@ -126,7 +138,7 @@ def consultar_por_filtros_avanzados(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
-
+    
 @router.get("/resumen-documento/{documento}", tags=["Consulta"], summary="Consultar convocatorias y fondos de un beneficiario")
 def consulta_convocatorias_fondos(
     documento: str, 
