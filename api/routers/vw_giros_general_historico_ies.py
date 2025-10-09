@@ -106,7 +106,7 @@ def consultar_por_filtros_avanzados(
         if periodo_academico:
             query_params["periodo_academico"] = periodo_academico
         
-        # Ejecutar la consulta CORRECTAMENTE - sin pasar params como segundo argumento
+        # Ejecutar la consulta
         result = db.execute(query_text, query_params)
         rows = result.fetchall()
         
@@ -123,22 +123,14 @@ def consultar_por_filtros_avanzados(
             
             raise HTTPException(status_code=404, detail=detail_msg)
             
-        return {
-            "filtros_aplicados": {
-                "convocatoria": convocatoria,
-                "fondo": fondo,
-                "documento": documento,
-                "periodo_academico": periodo_academico
-            },
-            "total_resultados": len(resultados_dict),
-            "resultados": resultados_dict
-        }
+        # Solo devolver los resultados
+        return resultados_dict
         
     except HTTPException:
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
-                
+                    
 @router.get("/resumen-documento/{documento}", tags=["Consulta"], summary="Consultar convocatorias y fondos de un beneficiario")
 def consulta_convocatorias_fondos(
     documento: str, 
