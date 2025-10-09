@@ -68,13 +68,12 @@ def obtener_por_documento_periodo_academico(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
     
-@router.get("/filtros-convocatoria-fondo-periodoAcademico/", summary="Consulta por convocatoria, fondo y periodo académico", description="Retorna registros filtrados por convocatoria, fondo y periodo académico")
+@router.get("/filtros-completo/", summary="Consulta por convocatoria, fondo, periodo académico y documento", description="Retorna registros filtrados por convocatoria, fondo, periodo académico y documento")
 def consultar_por_filtros_avanzados(
     convocatoria: str = Query(..., description="Nombre de la convocatoria (requerido)"),
     fondo: str = Query(..., description="Nombre del fondo (requerido)"),
     periodo_academico: str = Query(..., description="Periodo académico (requerido)"),
-    skip: int = 0,
-    limit: int = 100,
+    documento: str = Query(..., description="Número de documento (requerido)"),
     db: Session = Depends(get_session_dtf_financiera),
     _: Dict[str, Any] = Depends(get_current_user)
 ):
@@ -82,18 +81,16 @@ def consultar_por_filtros_avanzados(
         statement = select(VwGirosGeneralHistoricoIes).where(
             VwGirosGeneralHistoricoIes.convocatoria == convocatoria,
             VwGirosGeneralHistoricoIes.fondo == fondo,
-            VwGirosGeneralHistoricoIes.periodo_academico == periodo_academico
+            VwGirosGeneralHistoricoIes.periodo_academico == periodo_academico,
+            VwGirosGeneralHistoricoIes.documento == documento
         )
-        
-        # Aplicar paginación
-        statement = statement.offset(skip).limit(limit)
         
         resultados = db.exec(statement).all()
         
         if not resultados:
             raise HTTPException(
                 status_code=404, 
-                detail=f"No se encontraron registros para convocatoria '{convocatoria}', fondo '{fondo}' y periodo académico '{periodo_academico}'"
+                detail=f"No se encontraron registros para convocatoria '{convocatoria}', fondo '{fondo}', periodo académico '{periodo_academico}' y documento '{documento}'"
             )
             
         return {
@@ -101,6 +98,7 @@ def consultar_por_filtros_avanzados(
                 "convocatoria": convocatoria,
                 "fondo": fondo,
                 "periodo_academico": periodo_academico,
+                "documento": documento
             },
             "total_resultados": len(resultados),
             "resultados": resultados
