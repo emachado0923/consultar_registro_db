@@ -69,37 +69,44 @@ def obtener_por_documento_periodo_academico(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
     
-@router.get("/filtros-completo/", summary="Consulta por convocatoria, fondo, periodo académico y documento", description="Retorna registros filtrados por convocatoria, fondo, periodo académico y documento")
+@router.get("/filtros-completo/", summary="Consulta por convocatoria, fondo, documento y periodo académico (opcional)", description="Retorna registros filtrados por convocatoria, fondo, documento y periodo académico (opcional)")
 def consultar_por_filtros_avanzados(
     convocatoria: str = Query(..., description="Nombre de la convocatoria (requerido)"),
     fondo: str = Query(..., description="Nombre del fondo (requerido)"),
-    periodo_academico: str = Query(..., description="Periodo académico (requerido)"),
     documento: str = Query(..., description="Número de documento (requerido)"),
+    periodo_academico: str = Query(None, description="Periodo académico (opcional)"),  # ← CAMBIADO A OPCIONAL
     db: Session = Depends(get_session_dtf_financiera),
     _: Dict[str, Any] = Depends(get_current_user)
 ):
     try:
+        # Construir la consulta base con filtros requeridos
         statement = select(VwGirosGeneralHistoricoIes).where(
             VwGirosGeneralHistoricoIes.convocatoria == convocatoria,
             VwGirosGeneralHistoricoIes.fondo == fondo,
-            VwGirosGeneralHistoricoIes.periodo_academico == periodo_academico,
             VwGirosGeneralHistoricoIes.documento == documento
         )
+        
+        # Agregar filtro de periodo_academico solo si se proporciona
+        if periodo_academico:
+            statement = statement.where(VwGirosGeneralHistoricoIes.periodo_academico == periodo_academico)
         
         resultados = db.exec(statement).all()
         
         if not resultados:
-            raise HTTPException(
-                status_code=404, 
-                detail=f"No se encontraron registros para convocatoria '{convocatoria}', fondo '{fondo}', periodo académico '{periodo_academico}' y documento '{documento}'"
-            )
+            # Mensaje de error que cambia según si se proporcionó periodo_academico o no
+            if periodo_academico:
+                detail_msg = f"No se encontraron registros para convocatoria '{convocatoria}', fondo '{fondo}', documento '{documento}' y periodo académico '{periodo_academico}'"
+            else:
+                detail_msg = f"No se encontraron registros para convocatoria '{convocatoria}', fondo '{fondo}' y documento '{documento}'"
+            
+            raise HTTPException(status_code=404, detail=detail_msg)
             
         return {
             "filtros_aplicados": {
                 "convocatoria": convocatoria,
                 "fondo": fondo,
-                "periodo_academico": periodo_academico,
-                "documento": documento
+                "documento": documento,
+                "periodo_academico": periodo_academico  # Será None si no se proporcionó
             },
             "total_resultados": len(resultados),
             "resultados": resultados
@@ -109,7 +116,6 @@ def consultar_por_filtros_avanzados(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al consultar: {str(e)}")
-
 
 @router.get("/resumen-documento/{documento}", tags=["Consulta"], summary="Consultar convocatorias y fondos de un beneficiario")
 def consulta_convocatorias_fondos(
