@@ -40,7 +40,7 @@ def require_admin(user: Dict[str, Any] = Depends(get_current_user)) -> Dict[str,
 def login(body: LoginRequest):
     q = text(
         """
-        SELECT username, password_hash, sal, activo, nombre_completo
+        SELECT username, password_hash, sal, activo, nombre_completo, tipo_usuario
         FROM usuarios
         WHERE username = :username
         """
@@ -54,15 +54,15 @@ def login(body: LoginRequest):
     salt = row[2]
     active = bool(row[3])
     full_name = row[4]
+    tipo_usuario = row[5]  # NUEVA COLUMNA
 
     if not active:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Cuenta desactivada")
     if not (stored_hash and salt) or not verify_password(salt, stored_hash, body.password):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Usuario o contraseña inválidos")
 
-    token = create_token({"username": body.username, "full_name": full_name})
-    return TokenResponse(access_token=token, user={"username": body.username, "full_name": full_name})
-
+    token = create_token({"username": body.username, "full_name": full_name, "tipo_usuario": tipo_usuario})
+    return TokenResponse(access_token=token, user={"username": body.username, "full_name": full_name, "tipo_usuario": tipo_usuario})
 
 @router.post("/change-password", tags=["Auth"], summary="Cambiar contraseña")
 def change_password(body: ChangePasswordRequest, user: Dict[str, Any] = Depends(get_current_user)):
