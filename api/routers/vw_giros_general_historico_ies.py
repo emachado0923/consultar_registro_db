@@ -2,7 +2,7 @@ from typing import Annotated, Any, Dict, List, Optional
 
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlmodel import Session, select, distinct
+from sqlmodel import Session, select, distinct, text
 from api.core.database import get_session_dtf_financiera
 from api.models.vw_giros_general_historico_ies import VwGirosGeneralHistoricoIes
 
@@ -82,7 +82,7 @@ def consultar_por_filtros_avanzados(
     _: Dict[str, Any] = Depends(get_current_user)
 ):
     try:
-        # Usar SQLModel directamente
+        # Usar SQLModel para construir la consulta
         statement = select(VwGirosGeneralHistoricoIes).where(
             VwGirosGeneralHistoricoIes.convocatoria == convocatoria,
             VwGirosGeneralHistoricoIes.fondo == fondo,
@@ -92,10 +92,21 @@ def consultar_por_filtros_avanzados(
         if periodo_academico:
             statement = statement.where(VwGirosGeneralHistoricoIes.periodo_academico == periodo_academico)
         
-        # Ejecutar la consulta
-        resultados = db.exec(statement).all()
+        # Ejecutar con db.execute (compilando el statement a SQL)
+        compiled_statement = statement.compile(
+            bind=db.get_bind(), 
+            compile_kwargs={"literal_binds": True}
+        )
         
-        if not resultados:
+        result = db.execute(text(str(compiled_statement)))
+        rows = result.fetchall()
+        
+        # Convertir a diccionarios
+        resultados_dict = []
+        for row in rows:
+            resultados_dict.append(dict(row._mapping))
+        
+        if not resultados_dict:
             if periodo_academico:
                 detail_msg = f"No se encontraron registros para convocatoria '{convocatoria}', fondo '{fondo}', documento '{documento}' y periodo académico '{periodo_academico}'"
             else:
@@ -121,45 +132,45 @@ def consultar_por_filtros_avanzados(
             "total_registros": 0
         })
         
-        for registro in resultados:
+        for registro in resultados_dict:
             # Crear clave única para el grupo
-            clave = (registro.documento, registro.convocatoria, registro.fondo)
+            clave = (registro["documento"], registro["convocatoria"], registro["fondo"])
             
             # Actualizar datos del grupo
             grupo = grupos[clave]
-            grupo["documento"] = registro.documento
-            grupo["nombre"] = registro.nombre
-            grupo["convocatoria"] = registro.convocatoria
-            grupo["fondo"] = registro.fondo
+            grupo["documento"] = registro["documento"]
+            grupo["nombre"] = registro["nombre"]
+            grupo["convocatoria"] = registro["convocatoria"]
+            grupo["fondo"] = registro["fondo"]
             
             # Agregar datos a los arrays
-            if registro.periodo_academico:
-                grupo["periodos_academicos"].append(registro.periodo_academico)
+            if registro.get("periodo_academico"):
+                grupo["periodos_academicos"].append(registro["periodo_academico"])
             
-            if registro.ies:
-                grupo["ies"].append(registro.ies)
+            if registro.get("ies"):
+                grupo["ies"].append(registro["ies"])
             
-            if registro.programa:
-                grupo["programas"].append(registro.programa)
+            if registro.get("programa"):
+                grupo["programas"].append(registro["programa"])
             
-            if registro.modalidad:
-                grupo["modalidades"].append(registro.modalidad)
+            if registro.get("modalidad"):
+                grupo["modalidades"].append(registro["modalidad"])
             
-            if registro.estado:
-                grupo["estados"].append(registro.estado)
+            if registro.get("estado"):
+                grupo["estados"].append(registro["estado"])
             
             # NUEVOS CAMPOS - agregados antes de valor_girar
-            if registro.valor_pagar_matricula is not None:
-                grupo["valores_pagar_matricula"].append(registro.valor_pagar_matricula)
+            if registro.get("valor_pagar_matricula") is not None:
+                grupo["valores_pagar_matricula"].append(registro["valor_pagar_matricula"])
             
-            if registro.valor_pagar_sostenimiento is not None:
-                grupo["valores_pagar_sostenimiento"].append(registro.valor_pagar_sostenimiento)
+            if registro.get("valor_pagar_sostenimiento") is not None:
+                grupo["valores_pagar_sostenimiento"].append(registro["valor_pagar_sostenimiento"])
             
-            if registro.valor_girar is not None:
-                grupo["valores_girar"].append(registro.valor_girar)
+            if registro.get("valor_girar") is not None:
+                grupo["valores_girar"].append(registro["valor_girar"])
             
-            if registro.fecha_registro:
-                grupo["fechas_registro"].append(registro.fecha_registro)
+            if registro.get("fecha_registro"):
+                grupo["fechas_registro"].append(registro["fecha_registro"])
             
             grupo["total_registros"] += 1
         
