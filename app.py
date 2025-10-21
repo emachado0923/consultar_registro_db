@@ -22,6 +22,7 @@ from api.routers import (
 	programas_preg_posg,
 	reintegros,
 	vw_giros_general_historico_ies,
+	informacion_cambio_pensum,
 )
 
 load_dotenv()
@@ -47,6 +48,8 @@ app.include_router(ies_preg_posg.router, prefix="/ies-preg-posg")
 app.include_router(programas_preg_posg.router, prefix="/programas-preg-posg")
 app.include_router(reintegros.router, prefix="/reintegros")
 app.include_router(vw_giros_general_historico_ies.router, prefix="/vw-giros-general")
+app.include_router(informacion_cambio_pensum.router, prefix="/api/informacion-cambio-pensum")
+
 
 
 @app.get("/")
