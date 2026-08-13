@@ -30,6 +30,7 @@ from api.routers import (
 	seguimiento_usuarios,
 	seguimiento_actividades,
 	seguimiento_informes,
+	matricula_cero,
 )
 
 load_dotenv()
@@ -70,6 +71,11 @@ app.include_router(seguimiento_catalogo.router)
 app.include_router(seguimiento_usuarios.router)
 app.include_router(seguimiento_actividades.router)
 app.include_router(seguimiento_informes.router)
+
+# ── Matrícula Cero (Consulta + Tablero) ──────────────────────────────────────
+# Nuevo, separado de /consulta (que se deja intacto). También define su
+# propio prefix completo ("/matricula-cero"), sin prefix adicional aquí.
+app.include_router(matricula_cero.router)
 
 
 
