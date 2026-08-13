@@ -51,6 +51,11 @@ app.add_middleware(
 	allow_credentials=False,
 	allow_methods=["*"],
 	allow_headers=["*"],
+	# Sin esto, el navegador bloquea la lectura de Content-Disposition desde
+	# JS en requests cross-origin (solo expone un set "seguro" de headers por
+	# defecto), y la descarga de informes en PDF cae siempre al nombre de
+	# archivo genérico en vez del nombre real que arma el backend.
+	expose_headers=["Content-Disposition"],
 )
 
 app.include_router(auth.router, prefix="/auth")
