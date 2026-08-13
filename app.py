@@ -23,6 +23,13 @@ from api.routers import (
 	reintegros,
 	vw_giros_general_historico_ies,
 	informacion_cambio_pensum,
+	seguimiento_auth,
+	seguimiento_ies,
+	seguimiento_convenios,
+	seguimiento_catalogo,
+	seguimiento_usuarios,
+	seguimiento_actividades,
+	seguimiento_informes,
 )
 
 load_dotenv()
@@ -50,8 +57,33 @@ app.include_router(reintegros.router, prefix="/reintegros")
 app.include_router(vw_giros_general_historico_ies.router, prefix="/vw-giros-general")
 app.include_router(informacion_cambio_pensum.router, prefix="/api/informacion-cambio-pensum")
 
+# ── Módulo Seguimiento Convenios MC ──────────────────────────────────────────
+# OJO: estos routers ya definen su propio prefix completo en su propio
+# APIRouter(prefix=...), así que NO se les pasa un prefix adicional aquí
+# (a diferencia de usuarios.router / ies_preg_posg.router arriba, que sí
+# reciben un prefix duplicado sobre el que ya traen — bug preexistente del
+# repo, ver nota al final de este archivo).
+app.include_router(seguimiento_auth.router)
+app.include_router(seguimiento_ies.router)
+app.include_router(seguimiento_convenios.router)
+app.include_router(seguimiento_catalogo.router)
+app.include_router(seguimiento_usuarios.router)
+app.include_router(seguimiento_actividades.router)
+app.include_router(seguimiento_informes.router)
+
 
 
 @app.get("/")
 def healthz():
 	return {"status": "ok", "time": time.time()}
+
+# NOTA (revisión solicitada, no corregida automáticamente):
+# usuarios.router e ies_preg_posg.router ya definen su propio prefix interno
+# ("/usuarios" y "/ies-preg-posg" respectivamente) y AQUÍ se les vuelve a pasar
+# el mismo prefix vía include_router(..., prefix=...). FastAPI concatena
+# ambos, así que sus rutas reales quedan en /usuarios/usuarios/... y
+# /ies-preg-posg/ies-preg-posg/... en vez de /usuarios/... e
+# /ies-preg-posg/.... Lo dejamos tal cual porque no era parte del alcance
+# pedido (agregar endpoints de Seguimiento), pero probablemente valga la pena
+# corregirlo en el frontend/Postman que ya esté apuntando a esas rutas (si
+# apunta a /usuarios/... solamente, hoy le está fallando).

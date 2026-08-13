@@ -1,0 +1,103 @@
+from typing import Any, Dict, List
+
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import text
+
+from ..core.database import engine_analitica
+from ..core.security_seguimiento import hash_password
+from ..models.seguimiento_usuarios import (
+    UsuarioSeguimientoCreate,
+    UsuarioSeguimientoEstadoUpdate,
+    UsuarioSeguimientoPublic,
+)
+from .seguimiento_auth import require_rol
+
+router = APIRouter(prefix="/seguimiento/usuarios", tags=["Seguimiento · Usuarios"])
+
+ROLES_VALIDOS = ("ADMIN", "DIRECTORA", "LMC", "AST", "AD", "AF", "AJ")
+
+
+@router.get("/", response_model=List[UsuarioSeguimientoPublic], summary="Listar usuarios de Seguimiento (solo ADMIN)")
+def list_usuarios(_: Dict[str, Any] = Depends(require_rol("ADMIN"))):
+    with engine_analitica.connect() as conn:
+        rows = conn.execute(
+            text("""
+                SELECT id, nombre, usuario, rol, activo, primer_login, creado_en
+                FROM usuarios_seg_proceso_mc
+                ORDER BY rol, nombre
+            """)
+        ).mappings().all()
+    return [dict(r) for r in rows]
+
+
+@router.post("/", response_model=UsuarioSeguimientoPublic, status_code=status.HTTP_201_CREATED, summary="Crear usuario de Seguimiento (solo ADMIN)")
+def create_usuario(
+    data: UsuarioSeguimientoCreate,
+    _: Dict[str, Any] = Depends(require_rol("ADMIN")),
+):
+    if data.rol not in ROLES_VALIDOS:
+        raise HTTPException(status_code=400, detail=f"rol debe ser uno de {ROLES_VALIDOS}")
+    if len(data.password) < 8:
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 8 caracteres.")
+    if not data.nombre.strip() or not data.usuario.strip():
+        raise HTTPException(status_code=400, detail="Nombre y usuario son obligatorios.")
+
+    pwd_hash = hash_password(data.password)
+    with engine_analitica.connect() as conn:
+        existe = conn.execute(
+            text("SELECT id FROM usuarios_seg_proceso_mc WHERE usuario=:u"), {"u": data.usuario.strip()}
+        ).fetchone()
+        if existe:
+            raise HTTPException(status_code=400, detail="Ya existe un usuario con ese nombre de usuario.")
+        result = conn.execute(
+            text("""
+                INSERT INTO usuarios_seg_proceso_mc (nombre, usuario, password_hash, rol, primer_login)
+                VALUES (:nombre, :usuario, :password_hash, :rol, 1)
+            """),
+            {
+                "nombre": data.nombre.strip(),
+                "usuario": data.usuario.strip(),
+                "password_hash": pwd_hash,
+                "rol": data.rol,
+            },
+        )
+        conn.commit()
+        nuevo_id = result.lastrowid
+
+        row = conn.execute(
+            text("""
+                SELECT id, nombre, usuario, rol, activo, primer_login, creado_en
+                FROM usuarios_seg_proceso_mc WHERE id=:id
+            """),
+            {"id": nuevo_id},
+        ).mappings().fetchone()
+    return dict(row)
+
+
+@router.patch("/{usuario_id}/estado", response_model=UsuarioSeguimientoPublic, summary="Activar/desactivar un usuario (solo ADMIN)")
+def update_estado_usuario(
+    usuario_id: int,
+    data: UsuarioSeguimientoEstadoUpdate,
+    _: Dict[str, Any] = Depends(require_rol("ADMIN")),
+):
+    if data.activo not in (0, 1):
+        raise HTTPException(status_code=400, detail="activo debe ser 0 o 1")
+    with engine_analitica.connect() as conn:
+        existe = conn.execute(
+            text("SELECT id FROM usuarios_seg_proceso_mc WHERE id=:id"), {"id": usuario_id}
+        ).fetchone()
+        if not existe:
+            raise HTTPException(status_code=404, detail="Usuario no encontrado")
+        conn.execute(
+            text("UPDATE usuarios_seg_proceso_mc SET activo=:activo WHERE id=:id"),
+            {"activo": data.activo, "id": usuario_id},
+        )
+        conn.commit()
+        row = conn.execute(
+            text("""
+                SELECT id, nombre, usuario, rol, activo, primer_login, creado_en
+                FROM usuarios_seg_proceso_mc WHERE id=:id
+            """),
+            {"id": usuario_id},
+        ).mappings().fetchone()
+    return dict(row)
