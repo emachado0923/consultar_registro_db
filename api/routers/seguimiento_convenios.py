@@ -13,10 +13,10 @@ from ..core.actividades_seguimiento import (
 )
 from ..core.database import engine_analitica, get_session_analitica
 from ..core.fechas_seguimiento import calcular_fechas_liquidacion
+from ..core.informes_seguimiento import _get_progreso_periodo
 from ..models.seguimiento_alertas import ConvenioDetalleOut
 from ..models.seguimiento_convenios import (
     ConvenioPeriodoCreate,
-    ConvenioPeriodoSeguimiento,
     ConvenioSeguimientoCreate,
     ConvenioSeguimientoUpdate,
 )
@@ -26,6 +26,16 @@ SessionDep = Annotated[Session, Depends(get_session_analitica)]
 router = APIRouter(prefix="/seguimiento", tags=["Seguimiento · Convenios"])
 
 ESTADOS_VALIDOS = ["En ejecución", "En liquidación", "En cierre", "Cerrado"]
+
+# Réplica exacta de ESTADO_A_TIPO_ACTIVO en app/seguimiento/ui.py (Streamlit
+# original) — determina qué etapa (tipo de actividad) está "activa" según el
+# estado actual del convenio, para saber de qué tipo calcular el progreso.
+ESTADO_A_TIPO_ACTIVO = {
+    "En ejecución": "ejecucion",
+    "En liquidación": "liquidacion",
+    "En cierre": "cierre",
+    "Cerrado": "cierre",
+}
 
 
 def _agregar_periodo_convenio(convenio_id: int, periodo: str) -> Optional[int]:
@@ -259,17 +269,30 @@ def update_convenio(
     }
 
 
-@router.get("/convenios/{convenio_id}/periodos", response_model=List[ConvenioPeriodoSeguimiento], summary="Listar períodos de un convenio")
+@router.get("/convenios/{convenio_id}/periodos", summary="Listar períodos de un convenio, con su % de avance en la etapa activa")
 def list_periodos(
     convenio_id: int,
     _: Dict[str, Any] = Depends(get_current_user_seguimiento),
-):
+) -> List[Dict[str, Any]]:
     with engine_analitica.connect() as conn:
+        estado = conn.execute(
+            text("SELECT estado FROM convenios_seg_proceso_mc WHERE id=:cid"), {"cid": convenio_id}
+        ).scalar()
         rows = conn.execute(
             text("SELECT id, convenio_id, periodo, orden, creado_en FROM convenio_periodos_seg_mc WHERE convenio_id=:cid ORDER BY orden, id"),
             {"cid": convenio_id},
         ).mappings().all()
-    return [dict(r) for r in rows]
+
+    # Igual que en pagina_tablero() del Streamlit original: cada período
+    # muestra su barra de progreso calculada sobre la etapa (tipo) activa
+    # según el estado actual del convenio, no sobre las 3 etapas a la vez.
+    tipo_activo = ESTADO_A_TIPO_ACTIVO.get(estado, "liquidacion")
+    resultado = []
+    for r in rows:
+        d = dict(r)
+        d["porcentaje_avance"] = _get_progreso_periodo(engine_analitica, d["id"], tipo_activo)
+        resultado.append(d)
+    return resultado
 
 
 @router.post("/convenios/{convenio_id}/periodos", status_code=status.HTTP_201_CREATED, summary="Agregar un período a un convenio (solo ADMIN)")
