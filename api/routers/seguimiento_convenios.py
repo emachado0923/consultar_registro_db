@@ -57,7 +57,7 @@ def _agregar_periodo_convenio(convenio_id: int, periodo: str) -> Optional[int]:
     return nuevo_id
 
 
-@router.get("/convenios", summary="Listar convenios (con datos de la IES)")
+@router.get("/convenios", summary="Listar convenios (con datos de la IES y nivel de alerta)")
 def list_convenios(
     session: SessionDep,
     _: Dict[str, Any] = Depends(get_current_user_seguimiento),
@@ -74,7 +74,26 @@ def list_convenios(
             ORDER BY c.estado, c.codigo
         """)
     ).mappings().all()
-    return [dict(r) for r in rows]
+
+    resultado = []
+    for r in rows:
+        d = dict(r)
+        # Igual que en pagina_tablero() del Streamlit original: cada tarjeta de
+        # convenio se colorea según su nivel de alerta más urgente vigente.
+        nivel_alerta, motivos_alerta = calcular_nivel_alerta_convenio(
+            engine_analitica,
+            d["id"],
+            d["fecha_limite_liquidacion_voluntaria"],
+            d["fecha_limite_liquidacion_unilateral"],
+            d["fecha_limite_liquidacion_judicial"],
+            d["fecha_vencimiento_poliza"],
+            d["fecha_firma_director_general"],
+            d["estado"],
+        )
+        d["nivel_alerta"] = nivel_alerta
+        d["motivos_alerta"] = motivos_alerta
+        resultado.append(d)
+    return resultado
 
 
 @router.post("/convenios", status_code=status.HTTP_201_CREATED, summary="Registrar nuevo convenio (solo ADMIN)")
