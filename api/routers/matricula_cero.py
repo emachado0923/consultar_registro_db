@@ -7,9 +7,17 @@ from ..core.database import engine_analitica, engine_convocatoria
 from ..core.matricula_cero_helpers import calcular_periodo_label
 from ..models.consulta import ConsultaResponse
 from ..models.matricula_cero import InfoPersonalMCResponse
-from .auth import get_current_user
+from .seguimiento_auth import get_current_user_seguimiento
 
 router = APIRouter(prefix="/matricula-cero", tags=["Matrícula Cero"])
+
+# NOTA: estos endpoints se autentican con el login de Seguimiento
+# (usuarios_seg_proceso_mc), NO con el login genérico de la API — decisión
+# tomada para centralizar roles bajo un solo sistema de usuarios, ya que
+# quien necesita Consulta+Tablero es el mismo equipo que ya tiene (o puede
+# tener) cuenta de Seguimiento. Cualquier rol autenticado (ADMIN, DIRECTORA,
+# LMC, AST, AD, AF, AJ) puede consultar — es de solo lectura, no se restringe
+# por rol específico aquí.
 
 
 @router.get(
@@ -19,7 +27,7 @@ router = APIRouter(prefix="/matricula-cero", tags=["Matrícula Cero"])
 )
 def consulta_formulario_2026_2(
     documento: str = Query(..., min_length=6, max_length=15),
-    _: Dict[str, Any] = Depends(get_current_user),
+    _: Dict[str, Any] = Depends(get_current_user_seguimiento),
 ) -> ConsultaResponse:
     """
     Endpoint NUEVO y separado de /consulta/formulario-mc (que se deja intacto,
@@ -48,7 +56,7 @@ def consulta_formulario_2026_2(
 )
 def tablero_info_personal(
     documento: str = Query(..., min_length=6, max_length=15),
-    _: Dict[str, Any] = Depends(get_current_user),
+    _: Dict[str, Any] = Depends(get_current_user_seguimiento),
 ) -> InfoPersonalMCResponse:
     """
     Equivalente a tablero_mc.py::_cargar_info_personal: consulta directamente
@@ -134,7 +142,7 @@ def tablero_giros(
         description="Si es True (por defecto), solo incluye períodos desde 2023-2 en adelante "
                     "(el proyecto actual). Si es False, incluye todo el histórico.",
     ),
-    _: Dict[str, Any] = Depends(get_current_user),
+    _: Dict[str, Any] = Depends(get_current_user_seguimiento),
 ) -> ConsultaResponse:
     """
     Equivalente a tablero_mc.py::_cargar_analitica + el filtro
