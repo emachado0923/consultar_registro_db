@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import time
 
@@ -36,6 +37,21 @@ from api.routers import (
 load_dotenv()
 
 app = FastAPI(title="API")
+
+# CORS: sin esto, el navegador bloquea las respuestas hacia el frontend
+# React (portal_mc_fastapi) aunque el backend responda bien — el request
+# aparece en el Network tab pero JS nunca ve la respuesta (lo que se ve
+# como "usuario o contraseña inválidos" en el login, aunque en realidad
+# nunca llegó a validar nada). Se usa "*" porque la auth es 100% por header
+# Authorization: Bearer (no hay cookies de sesión de por medio), así que
+# permitir cualquier origen no expone nada sensible.
+app.add_middleware(
+	CORSMiddleware,
+	allow_origins=["*"],
+	allow_credentials=False,
+	allow_methods=["*"],
+	allow_headers=["*"],
+)
 
 app.include_router(auth.router, prefix="/auth")
 app.include_router(consulta.router, prefix="/consulta")
