@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
 from sqlmodel import Session
 
+from ..core.actividades_seguimiento import crear_instancias_actividades
 from ..core.database import engine_analitica, get_session_analitica
 from ..models.seguimiento_catalogo import ActividadBaseCreate, ActividadBaseUpdate
 from .seguimiento_auth import get_current_user_seguimiento, require_rol
@@ -49,6 +50,12 @@ def create_actividad_catalogo(
     (+1) el orden de las actividades del mismo tipo que ya estaban en esa
     posición o después, para insertar sin duplicar posiciones. No expone
     'aplica_a' (revertido en favor del botón manual "No aplica" por actividad).
+
+    A diferencia del Streamlit original (que requería entrar convenio por
+    convenio, período por período, y darle clic a "🔄 Sincronizar" en cada
+    uno), acá la sincronización es automática: apenas se crea la actividad,
+    se agrega como instancia "Pendiente" en TODOS los períodos existentes que
+    ya tengan actividades de este tipo — sin ningún paso manual adicional.
     """
     _validar_tipo(tipo)
     if not data.nombre.strip() or not data.subcategoria.strip():
@@ -79,7 +86,18 @@ def create_actividad_catalogo(
         )
         conn.commit()
         nuevo_id = result.lastrowid
-    return {"id": nuevo_id}
+
+        periodos = conn.execute(
+            text("SELECT id, convenio_id FROM convenio_periodos_seg_mc")
+        ).mappings().all()
+
+    periodos_sincronizados = 0
+    for p in periodos:
+        insertadas = crear_instancias_actividades(engine_analitica, p["convenio_id"], p["id"], tipo)
+        if insertadas:
+            periodos_sincronizados += 1
+
+    return {"id": nuevo_id, "periodos_sincronizados": periodos_sincronizados, "total_periodos": len(periodos)}
 
 
 @router.put("/{actividad_id}", summary="Editar actividad del catálogo, incl. reordenar (solo ADMIN)")

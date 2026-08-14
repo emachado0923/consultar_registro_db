@@ -9,15 +9,17 @@ from sqlalchemy import text
 from sqlalchemy.engine import Engine
 
 
-def crear_instancias_actividades(engine: Engine, convenio_id: int, convenio_periodo_id: int, tipo: str) -> None:
+def crear_instancias_actividades(engine: Engine, convenio_id: int, convenio_periodo_id: int, tipo: str) -> int:
     """
     Crea las instancias de actividades del catálogo (tipo='ejecucion'|'liquidacion'|'cierre')
     para un período específico de un convenio. Idempotente (INSERT IGNORE):
     llamarla de nuevo (ej. tras agregar actividades al catálogo) no duplica
-    las que ya existían.
+    las que ya existían. Retorna cuántas instancias nuevas insertó realmente
+    (INSERT IGNORE no cuenta las que ya existían), para poder reportar el
+    resultado de una sincronización (ver create_actividad_catalogo).
     """
     with engine.connect() as conn:
-        conn.execute(
+        resultado = conn.execute(
             text("""
                 INSERT IGNORE INTO actividades_convenio_seg_mc
                     (convenio_id, convenio_periodo_id, actividad_base_id, estado, porcentaje_avance)
@@ -29,6 +31,7 @@ def crear_instancias_actividades(engine: Engine, convenio_id: int, convenio_peri
             {"convenio_id": convenio_id, "convenio_periodo_id": convenio_periodo_id, "tipo": tipo},
         )
         conn.commit()
+        return resultado.rowcount
 
 
 def preseed_notificaciones_pasadas(
