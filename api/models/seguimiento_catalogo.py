@@ -29,7 +29,12 @@ class ActividadBaseSeguimiento(SQLModel, table=True):
 
 
 class ActividadBaseCreate(SQLModel):
-    tipo: str
+    # 'tipo' ya llega como parámetro de ruta en POST /seguimiento/catalogo/{tipo}
+    # (create_actividad_catalogo usa exclusivamente ese valor, nunca data.tipo),
+    # así que el body real que manda el frontend no lo incluye. Antes 'tipo'
+    # era obligatorio acá, lo que hacía que ESE POST fallara siempre con 422
+    # "tipo: Field required" — se deja opcional porque nunca se lee del body.
+    tipo: Optional[str] = None
     nombre: str
     subcategoria: str
     subcategoria_orden: int = 1
