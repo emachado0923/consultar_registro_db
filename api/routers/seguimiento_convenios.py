@@ -179,7 +179,7 @@ def get_convenio_detalle(
                        c.fecha_limite_liquidacion_voluntaria, c.fecha_limite_liquidacion_unilateral,
                        c.fecha_limite_liquidacion_judicial, c.fecha_vencimiento_poliza,
                        c.supervisor, c.apoyo_supervision, c.observaciones_generales,
-                       c.fecha_firma_director_general
+                       c.fecha_firma_director_general, c.creado_por
                 FROM convenios_seg_proceso_mc c
                 JOIN ies_seg_proceso_mc i ON c.ies_id = i.id
                 WHERE c.id = :cid
@@ -219,6 +219,7 @@ def get_convenio_detalle(
         supervisor=row["supervisor"],
         apoyo_supervision=row["apoyo_supervision"],
         observaciones_generales=row["observaciones_generales"],
+        creado_por=row["creado_por"],
         nivel_alerta=nivel_alerta,
         motivos_alerta=motivos_alerta,
     )

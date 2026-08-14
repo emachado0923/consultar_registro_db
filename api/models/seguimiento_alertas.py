@@ -21,5 +21,6 @@ class ConvenioDetalleOut(BaseModel):
     supervisor: Optional[str] = None
     apoyo_supervision: Optional[str] = None
     observaciones_generales: Optional[str] = None
+    creado_por: Optional[str] = None
     nivel_alerta: Optional[str] = None  # AVISO | URGENTE | CRÍTICO | None
     motivos_alerta: List[str] = []
