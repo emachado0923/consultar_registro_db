@@ -9,3 +9,8 @@ python-dotenv==1.0.1
 # Agregados para el módulo Seguimiento Convenios MC:
 bcrypt==4.1.3
 reportlab==4.2.2
+Pillow==10.4.0
+# Requerido por FastAPI para leer multipart/form-data (Request.form(),
+# UploadFile) — lo usan los endpoints de informes en PDF que ahora reciben
+# imágenes de evidencia además de los checkboxes.
+python-multipart==0.0.9

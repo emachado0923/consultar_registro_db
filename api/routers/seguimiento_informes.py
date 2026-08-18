@@ -1,7 +1,8 @@
+import json
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Tuple
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import text
 
 from ..core.actividades_seguimiento import calcular_nivel_alerta_convenio
@@ -84,6 +85,7 @@ def _armar_contexto(
                     "etiqueta": etq,
                     "pct_global": datos[tk]["pct_global"],
                     "total": datos[tk]["total"],
+                    "tipo": tk,
                     "subcats": [
                         {"nombre": sc, **info}
                         for sc, info in sorted(datos[tk]["subcats"].items(), key=lambda x: x[1]["sub_orden"])
@@ -172,22 +174,99 @@ def informe_convenio_json(
     )
 
 
-@router.get("/periodo/{periodo_id}/pdf", summary="Informe de un período específico, en PDF")
-def informe_periodo_pdf(
+def _leer_filtros_form(form) -> Dict[str, bool]:
+    """Lee los checkboxes del modal desde el multipart/form-data (llegan como
+    strings "true"/"false", no como bool nativo — FormData del navegador solo
+    maneja texto y archivos)."""
+
+    def _bool(nombre: str, defecto: bool) -> bool:
+        valor = form.get(nombre)
+        if valor is None:
+            return defecto
+        return str(valor).strip().lower() in ("true", "1", "on", "yes")
+
+    return {
+        "incluir_alerta": _bool("incluir_alerta", True),
+        "incluir_fechas": _bool("incluir_fechas", True),
+        "incluir_ejecucion": _bool("incluir_ejecucion", True),
+        "incluir_liquidacion": _bool("incluir_liquidacion", True),
+        "incluir_cierre": _bool("incluir_cierre", True),
+        "incluir_comentarios": _bool("incluir_comentarios", True),
+        "incluir_resumen_ejecutivo": _bool("incluir_resumen_ejecutivo", True),
+        "incluir_detalle_actividades": _bool("incluir_detalle_actividades", False),
+    }
+
+
+# Límites de defensa en el servidor (además de los que ya valida el frontend)
+# para que un informe puntual no pueda inflarse sin control.
+MAX_IMAGENES_POR_NOTA = 5
+MAX_BYTES_POR_IMAGEN = 12 * 1024 * 1024  # 12 MB
+
+
+async def _leer_notas_comentarios_form(form) -> Dict[Tuple[str, str], Dict[str, Any]]:
+    """
+    Lee los comentarios + imágenes por subcategoría que el usuario escribió
+    en el modal justo antes de generar el informe. Formato esperado en el
+    multipart:
+      - campo "notas": JSON con una lista de {"clave","tipo","subcategoria","comentario"}
+      - por cada nota, 0 o más archivos bajo el campo "imagenes::<clave>"
+
+    Importante: nada de esto se guarda en ninguna tabla ni archivo — se lee,
+    se usa para armar ESTE PDF puntual, y se descarta al terminar la
+    petición (ver generar_pdf_informe/procesar_imagen_para_pdf).
+    """
+    notas_raw = form.get("notas")
+    if not notas_raw:
+        return {}
+    try:
+        notas = json.loads(notas_raw)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="El campo 'notas' no es un JSON válido.")
+
+    resultado: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for nota in notas:
+        clave = nota.get("clave")
+        tipo = nota.get("tipo")
+        subcategoria = nota.get("subcategoria")
+        comentario = (nota.get("comentario") or "").strip()
+        if not clave or not tipo or not subcategoria:
+            continue
+
+        archivos = form.getlist(f"imagenes::{clave}")[:MAX_IMAGENES_POR_NOTA]
+        imagenes_bytes: List[bytes] = []
+        for archivo in archivos:
+            if not hasattr(archivo, "read"):
+                continue
+            datos = await archivo.read()
+            if len(datos) > MAX_BYTES_POR_IMAGEN:
+                continue  # se omite silenciosamente; el frontend ya valida el tamaño antes de subir
+            imagenes_bytes.append(datos)
+
+        if not comentario and not imagenes_bytes:
+            continue
+        resultado[(tipo, subcategoria)] = {"comentario": comentario, "imagenes": imagenes_bytes}
+    return resultado
+
+
+@router.post("/periodo/{periodo_id}/pdf", summary="Informe de un período específico, en PDF")
+async def informe_periodo_pdf(
     periodo_id: int,
-    incluir_alerta: bool = True,
-    incluir_fechas: bool = True,
-    incluir_ejecucion: bool = True,
-    incluir_liquidacion: bool = True,
-    incluir_cierre: bool = True,
-    incluir_comentarios: bool = True,
+    request: Request,
     user: Dict[str, Any] = Depends(get_current_user_seguimiento),
 ) -> Response:
+    form = await request.form()
+    filtros = _leer_filtros_form(form)
+    notas_comentarios = await _leer_notas_comentarios_form(form)
+
     contexto = informe_periodo_json(
-        periodo_id, incluir_alerta, incluir_fechas, incluir_ejecucion, incluir_liquidacion, incluir_cierre,
-        incluir_comentarios, user,
+        periodo_id,
+        filtros["incluir_alerta"], filtros["incluir_fechas"], filtros["incluir_ejecucion"],
+        filtros["incluir_liquidacion"], filtros["incluir_cierre"], filtros["incluir_comentarios"],
+        user,
     )
-    pdf_bytes = generar_pdf_informe(contexto)
+    contexto["incluir_resumen_ejecutivo"] = filtros["incluir_resumen_ejecutivo"]
+    contexto["incluir_detalle_actividades"] = filtros["incluir_detalle_actividades"]
+    pdf_bytes = generar_pdf_informe(contexto, notas_comentarios)
     nombre_archivo = f"Informe_{contexto['codigo'].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
     return Response(
         content=pdf_bytes,
@@ -196,22 +275,25 @@ def informe_periodo_pdf(
     )
 
 
-@router.get("/convenio/{convenio_id}/pdf", summary="Informe consolidado de un convenio, en PDF")
-def informe_convenio_pdf(
+@router.post("/convenio/{convenio_id}/pdf", summary="Informe consolidado de un convenio, en PDF")
+async def informe_convenio_pdf(
     convenio_id: int,
-    incluir_alerta: bool = True,
-    incluir_fechas: bool = True,
-    incluir_ejecucion: bool = True,
-    incluir_liquidacion: bool = True,
-    incluir_cierre: bool = True,
-    incluir_comentarios: bool = True,
+    request: Request,
     user: Dict[str, Any] = Depends(get_current_user_seguimiento),
 ) -> Response:
+    form = await request.form()
+    filtros = _leer_filtros_form(form)
+    notas_comentarios = await _leer_notas_comentarios_form(form)
+
     contexto = informe_convenio_json(
-        convenio_id, incluir_alerta, incluir_fechas, incluir_ejecucion, incluir_liquidacion, incluir_cierre,
-        incluir_comentarios, user,
+        convenio_id,
+        filtros["incluir_alerta"], filtros["incluir_fechas"], filtros["incluir_ejecucion"],
+        filtros["incluir_liquidacion"], filtros["incluir_cierre"], filtros["incluir_comentarios"],
+        user,
     )
-    pdf_bytes = generar_pdf_informe(contexto)
+    contexto["incluir_resumen_ejecutivo"] = filtros["incluir_resumen_ejecutivo"]
+    contexto["incluir_detalle_actividades"] = filtros["incluir_detalle_actividades"]
+    pdf_bytes = generar_pdf_informe(contexto, notas_comentarios)
     nombre_archivo = f"Informe_{contexto['codigo'].replace(' ', '_')}_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf"
     return Response(
         content=pdf_bytes,

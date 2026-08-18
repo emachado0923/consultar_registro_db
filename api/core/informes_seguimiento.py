@@ -104,6 +104,21 @@ def get_datos_informe_periodo(engine: Engine, convenio_periodo_id: int) -> Dict[
                 contadores["No aplica"] += 1
             else:
                 contadores[estado] = contadores.get(estado, 0) + 1
+        # % y conteo por estado a nivel de SUBCATEGORÍA (nuevo, para el
+        # "resumen ejecutivo" del informe) — mismo criterio que
+        # _get_progreso_periodo (solo es_relevante=1) y que el conteo por
+        # tipo de arriba, pero agregado por subcategoría en vez de global.
+        for info in subcats.values():
+            acts_relevantes = [a for a in info["acts"] if a["es_relevante"]]
+            info["pct"] = round(sum(a["pct"] for a in acts_relevantes) / len(acts_relevantes)) if acts_relevantes else 0
+            conteo_subcat = {"Completada": 0, "En curso": 0, "Pendiente": 0, "Bloqueada": 0, "Atrasada": 0, "No aplica": 0}
+            for a in info["acts"]:
+                if a["no_aplica"]:
+                    conteo_subcat["No aplica"] += 1
+                else:
+                    conteo_subcat[a["estado"]] = conteo_subcat.get(a["estado"], 0) + 1
+            info["contadores"] = conteo_subcat
+
         resultado[tipo] = {
             "subcats": subcats,
             "contadores": contadores,
@@ -135,11 +150,144 @@ def texto_fecha_estado(fecha: Optional[date], es_neutral: bool = False) -> Tuple
         return f"Faltan {dias} días", "#15803D"
 
 
-def generar_pdf_informe(contexto: Dict[str, Any]) -> bytes:
+def procesar_imagen_para_pdf(datos_imagen: bytes, lado_max_px: int = 1600, calidad_jpeg: int = 85) -> "io.BytesIO":
+    """
+    Prepara una imagen subida por el usuario (evidencia de una subcategoría,
+    solo para ESTE PDF puntual — nunca se guarda en disco ni en la BD) para
+    insertarla con reportlab:
+
+    - Corrige la rotación según el tag EXIF de orientación. Las fotos de
+      celular casi siempre traen los píxeles "acostados" con ese tag
+      diciendo cómo rotarlos al mostrarlas; reportlab/Pillow ignoran ese tag
+      por defecto, así que sin este paso muchas fotos saldrían giradas
+      90°/180° en el informe.
+    - Aplana el canal alfa (PNG/webp con transparencia) sobre fondo blanco:
+      re-codificamos siempre a JPEG (liviano, universal, reportlab lo lee
+      sin dependencias extra) y JPEG no soporta transparencia — sin este
+      paso las zonas transparentes saldrían en negro.
+    - Reduce el tamaño si excede `lado_max_px` en el lado más largo: una
+      foto de celular de 12+ megapíxeles no aporta nada en una página que la
+      va a mostrar del tamaño de una estampilla, y solo infla el PDF.
+
+    Lanza ValueError si los bytes no son una imagen legible — el llamador
+    debe capturarlo y descartar esa imagen puntual (con un aviso) en vez de
+    hacer fallar la generación de todo el informe.
+    """
+    import io
+
+    from PIL import Image as PILImage
+    from PIL import ImageOps
+
+    try:
+        imagen = PILImage.open(io.BytesIO(datos_imagen))
+        imagen.load()
+    except Exception as exc:  # Pillow lanza distintos tipos según el problema
+        raise ValueError(f"No se pudo leer como imagen: {exc}") from exc
+
+    imagen = ImageOps.exif_transpose(imagen)
+
+    if imagen.mode in ("RGBA", "LA") or (imagen.mode == "P" and "transparency" in imagen.info):
+        base_blanca = PILImage.new("RGB", imagen.size, (255, 255, 255))
+        imagen_rgba = imagen.convert("RGBA")
+        base_blanca.paste(imagen_rgba, mask=imagen_rgba.split()[-1])
+        imagen = base_blanca
+    elif imagen.mode != "RGB":
+        imagen = imagen.convert("RGB")
+
+    imagen.thumbnail((lado_max_px, lado_max_px), PILImage.LANCZOS)
+
+    salida = io.BytesIO()
+    imagen.save(salida, format="JPEG", quality=calidad_jpeg, optimize=True)
+    salida.seek(0)
+    return salida
+
+
+def _construir_grid_imagenes(imagenes_bytesio: List["io.BytesIO"]):
+    """
+    Arma una cuadrícula de imágenes ya procesadas (ver `procesar_imagen_para_pdf`)
+    para insertar en el PDF, con "contain-fit": cada imagen se escala para
+    CABER dentro de su celda preservando su proporción real (sin distorsión,
+    sin recorte) — el tamaño de celda se adapta según cuántas imágenes hay
+    para que una sola foto no quede diminuta ni tres fotos queden gigantes.
+    """
+    from reportlab.lib.units import cm
+    from reportlab.platypus import Image as RLImage
+    from reportlab.platypus import Table, TableStyle
+    from PIL import Image as PILImage
+
+    if not imagenes_bytesio:
+        return None
+
+    # (columnas, ancho_celda, alto_celda) según cuántas imágenes hay en esta subcategoría.
+    columnas = min(len(imagenes_bytesio), 3)
+    ancho_celda, alto_celda = {
+        1: (10.5 * cm, 9.5 * cm),
+        2: (8.0 * cm, 7.5 * cm),
+        3: (5.4 * cm, 5.4 * cm),
+    }[columnas]
+
+    celdas = []
+    for buf in imagenes_bytesio:
+        buf.seek(0)
+        ancho_px, alto_px = PILImage.open(buf).size
+        buf.seek(0)
+        escala = min(ancho_celda / ancho_px, alto_celda / alto_px)
+        celdas.append(RLImage(buf, width=ancho_px * escala, height=alto_px * escala))
+
+    filas = [celdas[i : i + columnas] for i in range(0, len(celdas), columnas)]
+    tabla = Table(filas, colWidths=[ancho_celda] * columnas)
+    tabla.setStyle(TableStyle([
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+        ("TOPPADDING", (0, 0), (-1, -1), 5),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
+        ("LEFTPADDING", (0, 0), (-1, -1), 5),
+        ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+    ]))
+    return tabla
+
+
+def _construir_barra_pct(pct: int, ancho):
+    """Barrita horizontal de progreso (2 celdas coloreadas) para el resumen ejecutivo."""
+    from reportlab.lib import colors
+    from reportlab.platypus import Table, TableStyle
+
+    pct = max(0, min(100, pct))
+    color = colors.HexColor("#B91C1C") if pct < 40 else colors.HexColor("#B45309") if pct < 80 else colors.HexColor("#15803D")
+    fondo = colors.HexColor("#E9E5DC")
+    ancho_lleno = ancho * (pct / 100)
+    ancho_vacio = ancho - ancho_lleno
+
+    if ancho_lleno <= 0:
+        tabla = Table([[""]], colWidths=[ancho], rowHeights=[6])
+        tabla.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, 0), fondo)]))
+    elif ancho_vacio <= 0:
+        tabla = Table([[""]], colWidths=[ancho], rowHeights=[6])
+        tabla.setStyle(TableStyle([("BACKGROUND", (0, 0), (0, 0), color)]))
+    else:
+        tabla = Table([["", ""]], colWidths=[ancho_lleno, ancho_vacio], rowHeights=[6])
+        tabla.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (0, 0), color),
+            ("BACKGROUND", (1, 0), (1, 0), fondo),
+        ]))
+    tabla.setStyle(TableStyle([
+        ("TOPPADDING", (0, 0), (-1, -1), 0), ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+        ("LEFTPADDING", (0, 0), (-1, -1), 0), ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+    ]))
+    return tabla
+
+
+def generar_pdf_informe(contexto: Dict[str, Any], notas_comentarios: Optional[Dict[Tuple[str, str], Dict[str, Any]]] = None) -> bytes:
     """
     Construye el informe formal en PDF con reportlab a partir del dict
-    `contexto`. Retorna los bytes del PDF. Portado tal cual de
-    ui.py::generar_pdf_informe.
+    `contexto` (portado originalmente de ui.py::generar_pdf_informe, luego
+    ampliado con un resumen ejecutivo por subcategoría y una sección de
+    comentarios/evidencias). Retorna los bytes del PDF.
+
+    `notas_comentarios`: dict opcional {(tipo, subcategoria): {"comentario": str, "imagenes": [bytes, ...]}}
+    con lo que el usuario escribió/adjuntó en el modal justo antes de generar
+    este informe puntual — NO viene de ninguna tabla, no se persiste en
+    ningún lado antes ni después de esta llamada.
     """
     import io
 
@@ -148,6 +296,8 @@ def generar_pdf_informe(contexto: Dict[str, Any]) -> bytes:
     from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
     from reportlab.lib.units import cm
     from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    notas_comentarios = notas_comentarios or {}
 
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
@@ -226,6 +376,9 @@ def generar_pdf_informe(contexto: Dict[str, Any]) -> bytes:
         if len(contexto["periodos"]) > 1:
             story.append(Paragraph(f"PERÍODO {periodo_bloque['label'].upper()}", st_h2))
 
+        incluir_resumen = contexto.get("incluir_resumen_ejecutivo", True)
+        incluir_detalle = contexto.get("incluir_detalle_actividades", False)
+
         for tipo_bloque in periodo_bloque["tipos"]:
             story.append(Paragraph(
                 f"ACTIVIDADES DE {tipo_bloque['etiqueta'].upper()} &mdash; {tipo_bloque['pct_global']}% completado",
@@ -236,39 +389,105 @@ def generar_pdf_informe(contexto: Dict[str, Any]) -> bytes:
                 story.append(Paragraph("Sin actividades asignadas a este período.", st_normal))
                 continue
 
-            for subcat in tipo_bloque["subcats"]:
-                story.append(Paragraph(subcat["nombre"], st_h3))
-                filas_act = [["#", "Actividad", "Estado", "Avance", "Responsable del estado"]]
-                for act in subcat["acts"]:
-                    estado_txt = "No aplica" if act["no_aplica"] else act["estado"]
-                    filas_act.append([
-                        str(act["orden"]),
-                        Paragraph(act["nombre"], st_normal),
-                        estado_txt,
-                        f"{act['pct']}%",
-                        Paragraph(act["resp_nombre"] or "Sin asignar", st_resp),
+            # ---- Resumen ejecutivo: % y conteos por subcategoría, en vez de
+            # ---- volcar cada actividad una por una (esto reemplaza al
+            # ---- listado plano como la vista PRINCIPAL del informe). ----
+            if incluir_resumen:
+                ANCHO_BARRA = 3.0 * cm
+                filas_resumen = [["Subcategoría", "%", "Progreso", "Compl.", "En curso", "Pend.", "Atrasadas", "Bloq."]]
+                filas_barra = {}  # fila -> flowable de la barra, para insertarlo después de construir la tabla
+                for fila_idx, sc in enumerate(tipo_bloque["subcats"], start=1):
+                    pct = sc.get("pct", 0)
+                    cont = sc.get("contadores", {})
+                    filas_barra[fila_idx] = _construir_barra_pct(pct, ANCHO_BARRA)
+                    filas_resumen.append([
+                        Paragraph(sc["nombre"], st_normal), f"{pct}%", "",
+                        str(cont.get("Completada", 0)), str(cont.get("En curso", 0)),
+                        str(cont.get("Pendiente", 0)), str(cont.get("Atrasada", 0)), str(cont.get("Bloqueada", 0)),
                     ])
-                t_act = Table(filas_act, colWidths=[0.8 * cm, 7.2 * cm, 2.0 * cm, 1.3 * cm, 4.7 * cm])
-                t_act.setStyle(TableStyle([
-                    ("FONTSIZE", (0, 0), (-1, -1), 8.3),
+                for fila_idx, barra in filas_barra.items():
+                    filas_resumen[fila_idx][2] = barra
+                t_resumen = Table(
+                    filas_resumen,
+                    colWidths=[4.6 * cm, 0.9 * cm, ANCHO_BARRA + 0.2 * cm, 1.4 * cm, 1.5 * cm, 1.3 * cm, 1.6 * cm, 1.3 * cm],
+                )
+                t_resumen.setStyle(TableStyle([
+                    ("FONTSIZE", (0, 0), (-1, -1), 8.5),
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E9E5DC")),
                     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                     ("GRID", (0, 0), (-1, -1), 0.4, borde),
-                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                    ("TOPPADDING", (0, 0), (-1, -1), 4),
-                    ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ("ALIGN", (1, 0), (-1, -1), "CENTER"),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
                 ]))
-                story.append(t_act)
+                story.append(t_resumen)
+                story.append(Spacer(1, 8))
 
-                if contexto["incluir_comentarios"]:
+            # ---- Detalle actividad-por-actividad: ahora OPCIONAL (antes era
+            # ---- lo único que mostraba el informe). ----
+            if incluir_detalle:
+                for subcat in tipo_bloque["subcats"]:
+                    story.append(Paragraph(subcat["nombre"], st_h3))
+                    filas_act = [["#", "Actividad", "Estado", "Avance", "Responsable del estado"]]
                     for act in subcat["acts"]:
-                        if act["comentarios"]:
-                            story.append(Spacer(1, 3))
-                            for fecha_c, usuario_c, texto_c in act["comentarios"]:
-                                story.append(Paragraph(
-                                    f"<b>{act['nombre'][:45]}</b> &mdash; {usuario_c} ({str(fecha_c)[:16]}): {texto_c}",
-                                    st_comentario
-                                ))
+                        estado_txt = "No aplica" if act["no_aplica"] else act["estado"]
+                        filas_act.append([
+                            str(act["orden"]),
+                            Paragraph(act["nombre"], st_normal),
+                            estado_txt,
+                            f"{act['pct']}%",
+                            Paragraph(act["resp_nombre"] or "Sin asignar", st_resp),
+                        ])
+                    t_act = Table(filas_act, colWidths=[0.8 * cm, 7.2 * cm, 2.0 * cm, 1.3 * cm, 4.7 * cm])
+                    t_act.setStyle(TableStyle([
+                        ("FONTSIZE", (0, 0), (-1, -1), 8.3),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E9E5DC")),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("GRID", (0, 0), (-1, -1), 0.4, borde),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("TOPPADDING", (0, 0), (-1, -1), 4),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                    ]))
+                    story.append(t_act)
+
+                    if contexto["incluir_comentarios"]:
+                        for act in subcat["acts"]:
+                            if act["comentarios"]:
+                                story.append(Spacer(1, 3))
+                                for fecha_c, usuario_c, texto_c in act["comentarios"]:
+                                    story.append(Paragraph(
+                                        f"<b>{act['nombre'][:45]}</b> &mdash; {usuario_c} ({str(fecha_c)[:16]}): {texto_c}",
+                                        st_comentario
+                                    ))
+
+            # ---- Comentarios y evidencias por subcategoría: lo que el
+            # ---- usuario escribió/adjuntó en el modal justo antes de
+            # ---- generar ESTE informe (no viene de ninguna tabla). ----
+            subcats_con_nota = [
+                sc for sc in tipo_bloque["subcats"]
+                if (tipo_bloque.get("tipo"), sc["nombre"]) in notas_comentarios
+            ]
+            if subcats_con_nota:
+                story.append(Paragraph("Comentarios y evidencias", st_h3))
+                for sc in subcats_con_nota:
+                    nota = notas_comentarios[(tipo_bloque.get("tipo"), sc["nombre"])]
+                    story.append(Paragraph(f"<b>{sc['nombre']}</b>", st_normal))
+                    if nota.get("comentario"):
+                        story.append(Paragraph(nota["comentario"], st_normal))
+                    imagenes_bytesio = []
+                    for datos_imagen in nota.get("imagenes", []):
+                        try:
+                            imagenes_bytesio.append(procesar_imagen_para_pdf(datos_imagen))
+                        except ValueError:
+                            # imagen corrupta/no soportada: se omite en vez de
+                            # tumbar la generación completa del informe.
+                            continue
+                    grid = _construir_grid_imagenes(imagenes_bytesio)
+                    if grid is not None:
+                        story.append(Spacer(1, 4))
+                        story.append(grid)
+                    story.append(Spacer(1, 10))
 
     doc.build(story)
     buffer.seek(0)
