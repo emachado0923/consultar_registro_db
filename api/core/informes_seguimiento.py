@@ -5,6 +5,7 @@ get_datos_informe_periodo, texto_fecha_estado, generar_pdf_informe).
 """
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
+from xml.sax.saxutils import escape as xml_escape
  
 from sqlalchemy import text
 from sqlalchemy.engine import Engine
@@ -118,6 +119,21 @@ def get_datos_informe_periodo(engine: Engine, convenio_periodo_id: int) -> Dict[
                 else:
                     conteo_subcat[a["estado"]] = conteo_subcat.get(a["estado"], 0) + 1
             info["contadores"] = conteo_subcat
+ 
+            # Último comentario registrado en la subcategoría (el más reciente
+            # entre todas sus actividades), para mostrarlo directamente en el
+            # resumen ejecutivo — reemplaza al antiguo checkbox de "historial
+            # de comentarios" por algo siempre visible y más útil de un
+            # vistazo. Cada `a["comentarios"]` ya viene ordenado DESC por
+            # fecha (ver get_historial_comentarios_periodo), así que el más
+            # reciente de cada actividad es el primer elemento.
+            ultimo = None
+            for a in info["acts"]:
+                if a["comentarios"]:
+                    fecha_c, usuario_c, texto_c = a["comentarios"][0]
+                    if ultimo is None or fecha_c > ultimo["fecha"]:
+                        ultimo = {"fecha": fecha_c, "usuario": usuario_c, "comentario": texto_c, "actividad": a["nombre"]}
+            info["ultimo_comentario"] = ultimo
  
         resultado[tipo] = {
             "subcats": subcats,
@@ -396,22 +412,53 @@ def generar_pdf_informe(contexto: Dict[str, Any], notas_comentarios: Optional[Di
                 ANCHO_BARRA = 4.0 * cm
                 filas_resumen = [["Subcategoría", "%", "Progreso", "Compl.", "En curso", "Pend."]]
                 filas_barra = {}  # fila -> flowable de la barra, para insertarlo después de construir la tabla
-                for fila_idx, sc in enumerate(tipo_bloque["subcats"], start=1):
+                # Filas (índices) que son de "último comentario" en vez de datos
+                # de subcategoría — se les aplica SPAN + estilo propio más
+                # abajo. Reemplaza al antiguo checkbox de "historial de
+                # comentarios" (que solo aparecía si además se activaba el
+                # detalle actividad-por-actividad) por algo siempre visible,
+                # directamente en el resumen ejecutivo.
+                filas_comentario = []
+                for sc in tipo_bloque["subcats"]:
                     pct = sc.get("pct", 0)
                     cont = sc.get("contadores", {})
+                    fila_idx = len(filas_resumen)
                     filas_barra[fila_idx] = _construir_barra_pct(pct, ANCHO_BARRA)
                     filas_resumen.append([
                         Paragraph(sc["nombre"], st_normal), f"{pct}%", "",
                         str(cont.get("Completada", 0)), str(cont.get("En curso", 0)),
                         str(cont.get("Pendiente", 0)),
                     ])
+                    ultimo = sc.get("ultimo_comentario")
+                    if ultimo:
+                        # Texto dinámico (nombre de actividad, usuario, comentario)
+                        # viene de datos escritos libremente por usuarios, así que
+                        # se escapa antes de meterlo en el markup XML de
+                        # Paragraph — un "<" o "&" sueltos en un comentario real
+                        # tumbarían la generación completa del informe si no se
+                        # escapan.
+                        actividad_esc = xml_escape(ultimo["actividad"] or "")
+                        usuario_esc = xml_escape(ultimo["usuario"] or "Sin usuario")
+                        comentario_esc = xml_escape(ultimo["comentario"] or "")
+                        fecha_str = str(ultimo["fecha"])[:16]
+                        # Nota: sin emoji — la fuente estándar (Helvetica, vía
+                        # reportlab) no tiene esos glifos y se veían como un
+                        # cuadro vacío en el PDF final; se usa texto en
+                        # mayúsculas + el mismo tono gris de st_comentario en
+                        # su lugar.
+                        texto = (
+                            f"<b>ÚLTIMO COMENTARIO</b> &mdash; {actividad_esc} · "
+                            f"{usuario_esc} ({fecha_str}): {comentario_esc}"
+                        )
+                        filas_comentario.append(len(filas_resumen))
+                        filas_resumen.append([Paragraph(texto, st_comentario), "", "", "", "", ""])
                 for fila_idx, barra in filas_barra.items():
                     filas_resumen[fila_idx][2] = barra
                 t_resumen = Table(
                     filas_resumen,
                     colWidths=[6.5 * cm, 0.9 * cm, ANCHO_BARRA + 0.2 * cm, 1.4 * cm, 1.5 * cm, 1.3 * cm],
                 )
-                t_resumen.setStyle(TableStyle([
+                estilo_resumen = [
                     ("FONTSIZE", (0, 0), (-1, -1), 8.5),
                     ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#E9E5DC")),
                     ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
@@ -420,7 +467,19 @@ def generar_pdf_informe(contexto: Dict[str, Any], notas_comentarios: Optional[Di
                     ("ALIGN", (1, 0), (-1, -1), "CENTER"),
                     ("TOPPADDING", (0, 0), (-1, -1), 5),
                     ("BOTTOMPADDING", (0, 0), (-1, -1), 5),
-                ]))
+                ]
+                # Overrides para las filas de "último comentario" — van
+                # DESPUÉS del estilo base en la lista para que tengan
+                # prioridad sobre él en esas celdas puntuales.
+                for fila_idx in filas_comentario:
+                    estilo_resumen.extend([
+                        ("SPAN", (0, fila_idx), (-1, fila_idx)),
+                        ("BACKGROUND", (0, fila_idx), (-1, fila_idx), colors.HexColor("#F9FAFB")),
+                        ("ALIGN", (0, fila_idx), (-1, fila_idx), "LEFT"),
+                        ("TOPPADDING", (0, fila_idx), (-1, fila_idx), 3),
+                        ("BOTTOMPADDING", (0, fila_idx), (-1, fila_idx), 5),
+                    ])
+                t_resumen.setStyle(TableStyle(estilo_resumen))
                 story.append(t_resumen)
                 story.append(Spacer(1, 8))
  
@@ -450,16 +509,6 @@ def generar_pdf_informe(contexto: Dict[str, Any], notas_comentarios: Optional[Di
                         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
                     ]))
                     story.append(t_act)
- 
-                    if contexto["incluir_comentarios"]:
-                        for act in subcat["acts"]:
-                            if act["comentarios"]:
-                                story.append(Spacer(1, 3))
-                                for fecha_c, usuario_c, texto_c in act["comentarios"]:
-                                    story.append(Paragraph(
-                                        f"<b>{act['nombre'][:45]}</b> &mdash; {usuario_c} ({str(fecha_c)[:16]}): {texto_c}",
-                                        st_comentario
-                                    ))
  
             # ---- Comentarios y evidencias por subcategoría: lo que el
             # ---- usuario escribió/adjuntó en el modal justo antes de
