@@ -1,8 +1,9 @@
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 import time
-
+ 
 from api.routers import (
 	auth,
 	consulta,
@@ -32,12 +33,13 @@ from api.routers import (
 	seguimiento_actividades,
 	seguimiento_informes,
 	matricula_cero,
+	reportes_inversion,
 )
-
+ 
 load_dotenv()
-
+ 
 app = FastAPI(title="API")
-
+ 
 # CORS: sin esto, el navegador bloquea las respuestas hacia el frontend
 # React (portal_mc_fastapi) aunque el backend responda bien — el request
 # aparece en el Network tab pero JS nunca ve la respuesta (lo que se ve
@@ -57,7 +59,7 @@ app.add_middleware(
 	# archivo genérico en vez del nombre real que arma el backend.
 	expose_headers=["Content-Disposition"],
 )
-
+ 
 app.include_router(auth.router, prefix="/auth")
 app.include_router(consulta.router, prefix="/consulta")
 app.include_router(usuarios.router, prefix="/usuarios")
@@ -78,7 +80,7 @@ app.include_router(programas_preg_posg.router, prefix="/programas-preg-posg")
 app.include_router(reintegros.router, prefix="/reintegros")
 app.include_router(vw_giros_general_historico_ies.router, prefix="/vw-giros-general")
 app.include_router(informacion_cambio_pensum.router, prefix="/api/informacion-cambio-pensum")
-
+ 
 # ── Módulo Seguimiento Convenios MC ──────────────────────────────────────────
 # OJO: estos routers ya definen su propio prefix completo en su propio
 # APIRouter(prefix=...), así que NO se les pasa un prefix adicional aquí
@@ -92,18 +94,22 @@ app.include_router(seguimiento_catalogo.router)
 app.include_router(seguimiento_usuarios.router)
 app.include_router(seguimiento_actividades.router)
 app.include_router(seguimiento_informes.router)
-
+ 
 # ── Matrícula Cero (Consulta + Tablero) ──────────────────────────────────────
 # Nuevo, separado de /consulta (que se deja intacto). También define su
 # propio prefix completo ("/matricula-cero"), sin prefix adicional aquí.
 app.include_router(matricula_cero.router)
-
-
-
+ 
+# Reportes de inversión y beneficios (también dentro de Consulta + Tablero,
+# NO de Seguimiento) — define su propio prefix completo ("/reportes-inversion").
+app.include_router(reportes_inversion.router)
+ 
+ 
+ 
 @app.get("/")
 def healthz():
 	return {"status": "ok", "time": time.time()}
-
+ 
 # NOTA (revisión solicitada, no corregida automáticamente):
 # usuarios.router e ies_preg_posg.router ya definen su propio prefix interno
 # ("/usuarios" y "/ies-preg-posg" respectivamente) y AQUÍ se les vuelve a pasar
