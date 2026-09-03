@@ -15,6 +15,7 @@ class ConvenioSeguimiento(SQLModel, table=True):
     periodo_academico: str = Field(max_length=10)
     estado: Optional[str] = Field(default="En ejecución", max_length=20)
     valor: Optional[Decimal] = Field(default=None)
+    valor_proyectado: Optional[Decimal] = Field(default=None)
     fecha_inicio_convenio: Optional[date] = None
     fecha_fin_convenio: Optional[date] = None
     fecha_limite_liquidacion_voluntaria: Optional[date] = None
@@ -34,6 +35,7 @@ class ConvenioSeguimientoCreate(SQLModel):
     ies_id: int
     periodo_academico: str
     valor: Optional[Decimal] = None
+    valor_proyectado: Optional[Decimal] = None
     fecha_inicio_convenio: Optional[date] = None
     fecha_fin_convenio: Optional[date] = None
     fecha_vencimiento_poliza: Optional[date] = None
@@ -47,6 +49,7 @@ class ConvenioSeguimientoUpdate(SQLModel):
     periodo_academico: Optional[str] = None
     estado: Optional[str] = None
     valor: Optional[Decimal] = None
+    valor_proyectado: Optional[Decimal] = None
     fecha_inicio_convenio: Optional[date] = None
     fecha_fin_convenio: Optional[date] = None
     fecha_vencimiento_poliza: Optional[date] = None

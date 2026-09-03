@@ -75,7 +75,7 @@ def list_convenios(
     rows = session.exec(
         text("""
             SELECT c.id, c.codigo, i.nombre AS ies_nombre, i.sigla AS ies_sigla,
-                   c.periodo_academico, c.estado, c.valor,
+                   c.periodo_academico, c.estado, c.valor, c.valor_proyectado,
                    c.fecha_limite_liquidacion_voluntaria, c.fecha_limite_liquidacion_unilateral,
                    c.fecha_limite_liquidacion_judicial, c.fecha_vencimiento_poliza,
                    c.supervisor, c.apoyo_supervision, c.fecha_firma_director_general
@@ -118,12 +118,12 @@ def create_convenio(
             result = conn.execute(
                 text("""
                     INSERT INTO convenios_seg_proceso_mc
-                        (codigo, ies_id, periodo_academico, estado, valor,
+                        (codigo, ies_id, periodo_academico, estado, valor, valor_proyectado,
                          fecha_inicio_convenio, fecha_fin_convenio,
                          fecha_limite_liquidacion_voluntaria, fecha_limite_liquidacion_unilateral,
                          fecha_limite_liquidacion_judicial, fecha_vencimiento_poliza,
                          supervisor, apoyo_supervision, observaciones_generales, creado_por)
-                    VALUES (:codigo, :ies_id, :periodo_academico, 'En ejecución', :valor,
+                    VALUES (:codigo, :ies_id, :periodo_academico, 'En ejecución', :valor, :valor_proyectado,
                             :fecha_inicio_convenio, :fecha_fin_convenio,
                             :f_liq_vol, :f_liq_uni, :f_liq_jud, :fecha_vencimiento_poliza,
                             :supervisor, :apoyo_supervision, :observaciones_generales, :creado_por)
@@ -133,6 +133,7 @@ def create_convenio(
                     "ies_id": data.ies_id,
                     "periodo_academico": data.periodo_academico.strip(),
                     "valor": data.valor,
+                    "valor_proyectado": data.valor_proyectado,
                     "fecha_inicio_convenio": data.fecha_inicio_convenio,
                     "fecha_fin_convenio": data.fecha_fin_convenio,
                     "f_liq_vol": f_liq_vol,
@@ -174,7 +175,7 @@ def get_convenio_detalle(
         row = conn.execute(
             text("""
                 SELECT c.id, c.codigo, i.nombre AS ies_nombre, i.sigla AS ies_sigla,
-                       c.periodo_academico, c.estado, c.valor,
+                       c.periodo_academico, c.estado, c.valor, c.valor_proyectado,
                        c.fecha_inicio_convenio, c.fecha_fin_convenio,
                        c.fecha_limite_liquidacion_voluntaria, c.fecha_limite_liquidacion_unilateral,
                        c.fecha_limite_liquidacion_judicial, c.fecha_vencimiento_poliza,
@@ -209,6 +210,7 @@ def get_convenio_detalle(
         periodo_academico=row["periodo_academico"],
         estado=row["estado"],
         valor=float(row["valor"]) if row["valor"] is not None else None,
+        valor_proyectado=float(row["valor_proyectado"]) if row["valor_proyectado"] is not None else None,
         fecha_inicio_convenio=str(row["fecha_inicio_convenio"]) if row["fecha_inicio_convenio"] else None,
         fecha_fin_convenio=str(row["fecha_fin_convenio"]) if row["fecha_fin_convenio"] else None,
         fecha_limite_liquidacion_voluntaria=str(row["fecha_limite_liquidacion_voluntaria"]) if row["fecha_limite_liquidacion_voluntaria"] else None,
