@@ -115,14 +115,35 @@ def resumen_financiero(
         stmt = stmt.bindparams(*_bindparams_expandibles(binds))
         filas = conn.execute(stmt, binds).mappings().all()
 
-        opciones_ies = [
-            r["nombre"]
-            for r in conn.execute(text("SELECT DISTINCT nombre FROM ies_seg_proceso_mc ORDER BY nombre ASC")).mappings().all()
-        ]
-        opciones_convenio = [
-            r["codigo"]
-            for r in conn.execute(text("SELECT codigo FROM convenios_seg_proceso_mc ORDER BY codigo ASC")).mappings().all()
-        ]
+        # Opciones "facetadas": las opciones de IES dependen del filtro de
+        # convenio activo (y viceversa), a pedido de Migue — si ya eligió una
+        # IES, el dropdown de Convenio solo debe ofrecer los convenios de esa
+        # IES, y si ya eligió un convenio, el dropdown de IES solo debe
+        # ofrecer la(s) IES de ese convenio. Cada lista se calcula con el
+        # filtro de LA OTRA dimensión únicamente (nunca con el propio: si ya
+        # elegiste 2 IES, esas 2 tienen que seguir apareciendo como opción,
+        # no desaparecer del propio dropdown).
+        where_ies, binds_ies = _construir_where(None, convenio)
+        stmt_ies = text(f"""
+            SELECT DISTINCT i.nombre
+            FROM ies_seg_proceso_mc i
+            JOIN convenios_seg_proceso_mc c ON c.ies_id = i.id
+            WHERE {where_ies}
+            ORDER BY i.nombre ASC
+        """)
+        stmt_ies = stmt_ies.bindparams(*_bindparams_expandibles(binds_ies))
+        opciones_ies = [r["nombre"] for r in conn.execute(stmt_ies, binds_ies).mappings().all()]
+
+        where_convenio, binds_convenio = _construir_where(ies, None)
+        stmt_convenio = text(f"""
+            SELECT DISTINCT c.codigo
+            FROM convenios_seg_proceso_mc c
+            JOIN ies_seg_proceso_mc i ON c.ies_id = i.id
+            WHERE {where_convenio}
+            ORDER BY c.codigo ASC
+        """)
+        stmt_convenio = stmt_convenio.bindparams(*_bindparams_expandibles(binds_convenio))
+        opciones_convenio = [r["codigo"] for r in conn.execute(stmt_convenio, binds_convenio).mappings().all()]
 
     hoy = date.today()
     convenios: List[ConvenioFinanciero] = []
