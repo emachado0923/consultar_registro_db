@@ -39,6 +39,15 @@ def _bindparams_expandibles(binds: Dict[str, Any]) -> List[Any]:
     return [bindparam(nombre, expanding=True) for nombre in binds if nombre.endswith("_list")]
 
 
+def _pct_ejecucion_valor(pagado: Optional[float], cdp: Optional[float]) -> Optional[float]:
+    """Replica exacta de la fórmula del excel `= VALOR PAGADO / VALOR DE CDP`
+    (columna X). None si no hay CDP todavía (no se puede dividir por 0 ni
+    tiene sentido mostrar un % sin base)."""
+    if not cdp:
+        return None
+    return (pagado or 0) / cdp
+
+
 def _pct_ejecucion_tiempo(fecha_inicio, fecha_fin, hoy: date) -> Optional[float]:
     """% de tiempo transcurrido del convenio (días desde fecha_inicio_convenio
     hasta HOY, sobre el total de días del convenio) — se calcula al vuelo con
@@ -75,6 +84,10 @@ def resumen_financiero(
     los períodos del convenio porque el valor proyectado varía por período,
     no es un número único por convenio (a diferencia de un intento anterior
     que sí lo modelaba así, ya revertido).
+    valor_cdp = SUM(valor_cdp) — es la base contra la que se calcula
+    pct_ejecucion_valor y valor_no_ejecutado, igual que en el excel del
+    financiero (ahí es por período: pagado/CDP; acá se suma el CDP de todos
+    los períodos con datos y se compara contra el total pagado).
     """
     where_sql, binds = _construir_where(ies, convenio)
 
@@ -84,13 +97,15 @@ def resumen_financiero(
                    c.periodo_academico, c.estado, c.valor, c.adiciones_recursos,
                    c.fecha_inicio_convenio, c.fecha_fin_convenio,
                    COALESCE(e.valor_ejecutado, 0) AS valor_ejecutado,
-                   COALESCE(e.valor_proyectado, 0) AS valor_proyectado
+                   COALESCE(e.valor_proyectado, 0) AS valor_proyectado,
+                   COALESCE(e.valor_cdp, 0) AS valor_cdp
             FROM convenios_seg_proceso_mc c
             JOIN ies_seg_proceso_mc i ON c.ies_id = i.id
             LEFT JOIN (
                 SELECT convenio_id,
                        SUM(valor_pagado) AS valor_ejecutado,
-                       SUM(valor_proyectado_periodo) AS valor_proyectado
+                       SUM(valor_proyectado_periodo) AS valor_proyectado,
+                       SUM(valor_cdp) AS valor_cdp
                 FROM convenio_ejecucion_financiera_mc
                 GROUP BY convenio_id
             ) e ON e.convenio_id = c.id
@@ -115,6 +130,7 @@ def resumen_financiero(
         valor_total = float(f["valor"] or 0)
         valor_ejecutado = float(f["valor_ejecutado"] or 0)
         valor_proyectado = float(f["valor_proyectado"] or 0)
+        valor_cdp = float(f["valor_cdp"] or 0)
         convenios.append(
             ConvenioFinanciero(
                 convenio_id=f["convenio_id"],
@@ -125,24 +141,27 @@ def resumen_financiero(
                 estado=f["estado"],
                 valor_total=valor_total,
                 adiciones_recursos=float(f["adiciones_recursos"] or 0),
+                valor_cdp=valor_cdp,
                 valor_ejecutado=valor_ejecutado,
                 valor_proyectado=valor_proyectado,
-                valor_no_ejecutado=valor_total - valor_ejecutado,
-                pct_ejecucion_valor=(valor_ejecutado / valor_total) if valor_total > 0 else None,
+                valor_no_ejecutado=valor_cdp - valor_ejecutado,
+                pct_ejecucion_valor=_pct_ejecucion_valor(valor_ejecutado, valor_cdp),
                 pct_ejecucion_tiempo=_pct_ejecucion_tiempo(f["fecha_inicio_convenio"], f["fecha_fin_convenio"], hoy),
             )
         )
 
     total_valor = sum(c.valor_total for c in convenios)
+    total_cdp = sum(c.valor_cdp for c in convenios)
     total_ejecutado = sum(c.valor_ejecutado for c in convenios)
     total_proyectado = sum(c.valor_proyectado for c in convenios)
 
     resumen = ResumenFinanciero(
         valor_total=total_valor,
+        valor_cdp=total_cdp,
         valor_ejecutado=total_ejecutado,
         valor_proyectado=total_proyectado,
-        valor_no_ejecutado=total_valor - total_ejecutado,
-        pct_ejecucion_valor=(total_ejecutado / total_valor) if total_valor > 0 else None,
+        valor_no_ejecutado=total_cdp - total_ejecutado,
+        pct_ejecucion_valor=_pct_ejecucion_valor(total_ejecutado, total_cdp),
         convenios=len(convenios),
     )
 
@@ -195,20 +214,31 @@ def periodos_financieros(
     def _i(v):
         return int(v) if v is not None else None
 
-    return [
-        PeriodoFinanciero(
-            periodo=f["periodo"],
-            numero_rp=str(f["numero_rp"]) if f["numero_rp"] is not None else None,
-            numero_cdp=str(f["numero_cdp"]) if f["numero_cdp"] is not None else None,
-            valor_cdp=_f(f["valor_cdp"]),
-            estudiantes_postulados=_i(f["estudiantes_postulados"]),
-            estudiantes_conciliados=_i(f["estudiantes_conciliados"]),
-            valor_conciliado=_f(f["valor_conciliado"]),
-            valor_pagado_matricula=_f(f["valor_pagado_matricula"]),
-            valor_pagado_complementarios=_f(f["valor_pagado_complementarios"]),
-            valor_pagado_ajuste=_f(f["valor_pagado_ajuste"]),
-            valor_pagado=_f(f["valor_pagado"]),
-            valor_proyectado_periodo=_f(f["valor_proyectado_periodo"]),
+    periodos = []
+    for f in filas:
+        valor_cdp = _f(f["valor_cdp"])
+        valor_pagado = _f(f["valor_pagado"])
+        # Fórmulas exactas del excel del financiero (columnas W y X, leídas
+        # directo del archivo): VALOR NO EJECUTADO = VALOR DE CDP - VALOR
+        # PAGADO, % EJECUCIÓN (VALOR) = VALOR PAGADO / VALOR DE CDP. Ninguna
+        # de las dos usa el valor total del contrato ni el valor proyectado.
+        valor_no_ejecutado = (valor_cdp - (valor_pagado or 0)) if valor_cdp is not None else None
+        periodos.append(
+            PeriodoFinanciero(
+                periodo=f["periodo"],
+                numero_rp=str(f["numero_rp"]) if f["numero_rp"] is not None else None,
+                numero_cdp=str(f["numero_cdp"]) if f["numero_cdp"] is not None else None,
+                valor_cdp=valor_cdp,
+                estudiantes_postulados=_i(f["estudiantes_postulados"]),
+                estudiantes_conciliados=_i(f["estudiantes_conciliados"]),
+                valor_conciliado=_f(f["valor_conciliado"]),
+                valor_pagado_matricula=_f(f["valor_pagado_matricula"]),
+                valor_pagado_complementarios=_f(f["valor_pagado_complementarios"]),
+                valor_pagado_ajuste=_f(f["valor_pagado_ajuste"]),
+                valor_pagado=valor_pagado,
+                valor_proyectado_periodo=_f(f["valor_proyectado_periodo"]),
+                valor_no_ejecutado=valor_no_ejecutado,
+                pct_ejecucion_valor=_pct_ejecucion_valor(valor_pagado, valor_cdp),
+            )
         )
-        for f in filas
-    ]
+    return periodos
