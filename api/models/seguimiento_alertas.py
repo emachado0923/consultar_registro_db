@@ -11,7 +11,7 @@ class ConvenioDetalleOut(BaseModel):
     periodo_academico: str
     estado: str
     valor: Optional[float] = None
-    valor_proyectado: Optional[float] = None
+    adiciones_recursos: Optional[float] = None
     fecha_inicio_convenio: Optional[str] = None
     fecha_fin_convenio: Optional[str] = None
     fecha_limite_liquidacion_voluntaria: Optional[str] = None
