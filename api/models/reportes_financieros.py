@@ -96,3 +96,37 @@ class ReporteFinancieroResponse(BaseModel):
     convenios: List[ConvenioFinanciero]
     opciones_ies: List[str]
     opciones_convenio: List[str]
+
+
+class FilaCargaExcel(BaseModel):
+    """Resultado de UNA fila del excel de ejecución financiera ("MC_Financiera")
+    que sube el financiero — ver POST /reportes-financieros/cargar-excel.
+    `estado` decide qué se hizo con la fila:
+      - "ok": se validó sin problemas (o se aplicó, si `confirmar=true`).
+      - "advertencia": se aplicó igual, pero hay algo que vale la pena que el
+        financiero revise (ej. la IES del excel no coincide con la del
+        convenio, o el valor de "adiciones de recursos" difiere entre filas
+        del mismo convenio).
+      - "error": la fila NO se aplicó (convenio_id o período no existen) —
+        se necesita corregir el excel o crear el período primero en
+        Administración > Convenios."""
+    fila_excel: int  # número de fila tal cual se vería al abrir el excel (encabezado = fila 1)
+    convenio_id: Optional[int] = None
+    codigo: Optional[str] = None
+    periodo: Optional[str] = None
+    estado: str
+    mensajes: List[str]
+
+
+class ResumenCargaExcel(BaseModel):
+    confirmado: bool  # false = solo previsualización, no se escribió nada en la BD
+    filas_leidas: int
+    filas_aplicadas: int
+    filas_con_advertencia: int
+    filas_con_error: int
+    convenios_afectados: int
+
+
+class CargaExcelResponse(BaseModel):
+    resumen: ResumenCargaExcel
+    filas: List[FilaCargaExcel]

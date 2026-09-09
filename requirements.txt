@@ -14,3 +14,7 @@ Pillow==10.4.0
 # UploadFile) — lo usan los endpoints de informes en PDF que ahora reciben
 # imágenes de evidencia además de los checkboxes.
 python-multipart==0.0.9
+# Requerido por POST /reportes-financieros/cargar-excel para leer el excel
+# "MC_Financiera" que sube el financiero (mismo motivo por el que ya lo usa
+# scripts/generar_sql_ejecucion_financiera.py).
+openpyxl==3.1.5
