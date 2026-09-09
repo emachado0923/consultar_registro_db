@@ -109,12 +109,21 @@ class FilaCargaExcel(BaseModel):
         del mismo convenio).
       - "error": la fila NO se aplicó (convenio_id o período no existen) —
         se necesita corregir el excel o crear el período primero en
-        Administración > Convenios."""
+        Administración > Convenios.
+
+    `accion` dice qué va a pasar en convenio_ejecucion_financiera_mc si la
+    fila se aplica (calculado contra el estado de la BD ANTES de esta carga
+    — es el mismo tanto en la previsualización como al confirmar, no
+    depende de `confirmar`): "crear" si ese convenio+período no tenía
+    ejecución financiera todavía, "actualizar" si ya existía y se va a
+    sobrescribir con los valores de este excel. None cuando la fila está en
+    error (no se puede saber, y no se va a aplicar de todas formas)."""
     fila_excel: int  # número de fila tal cual se vería al abrir el excel (encabezado = fila 1)
     convenio_id: Optional[int] = None
     codigo: Optional[str] = None
     periodo: Optional[str] = None
     estado: str
+    accion: Optional[str] = None  # "crear" | "actualizar" | None (si estado="error")
     mensajes: List[str]
 
 
@@ -125,6 +134,11 @@ class ResumenCargaExcel(BaseModel):
     filas_con_advertencia: int
     filas_con_error: int
     convenios_afectados: int
+    # Desglose de filas_aplicadas (o, en previsualización, de las filas que
+    # SERÍAN aplicables) por tipo de acción — a pedido de Migue, para que se
+    # vea de una si la carga va a pisar datos que ya existían.
+    filas_nuevas: int
+    filas_actualizadas: int
 
 
 class CargaExcelResponse(BaseModel):

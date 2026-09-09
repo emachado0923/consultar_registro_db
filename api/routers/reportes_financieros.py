@@ -451,6 +451,12 @@ async def cargar_excel_financiero(
 
     convenios_info: Dict[int, Dict[str, Any]] = {}
     periodos_validos: Dict[int, set] = {}
+    # (convenio_id, período normalizado) que YA tienen ejecución financiera
+    # cargada — se usa para decidir `accion` ("crear" vs "actualizar") en
+    # cada fila, calculado contra el estado de la BD ANTES de esta carga (no
+    # cambia entre la llamada de previsualización y la de confirmar, para
+    # que se vea lo mismo en las 2).
+    ejecucion_existente: set = set()
 
     with engine_analitica.connect() as conn:
         if convenio_ids_presentes:
@@ -468,6 +474,12 @@ async def cargar_excel_financiero(
             """).bindparams(bindparam("ids", expanding=True))
             for r in conn.execute(stmt_p, {"ids": tuple(convenio_ids_presentes)}).mappings().all():
                 periodos_validos.setdefault(r["convenio_id"], set()).add(_normalizar(r["periodo"]))
+
+            stmt_e = text("""
+                SELECT convenio_id, periodo FROM convenio_ejecucion_financiera_mc WHERE convenio_id IN :ids
+            """).bindparams(bindparam("ids", expanding=True))
+            for r in conn.execute(stmt_e, {"ids": tuple(convenio_ids_presentes)}).mappings().all():
+                ejecucion_existente.add((r["convenio_id"], _normalizar(r["periodo"])))
 
         resultados: List[FilaCargaExcel] = []
         filas_para_aplicar = []
@@ -537,12 +549,17 @@ async def cargar_excel_financiero(
             if estado != "error":
                 filas_para_aplicar.append(d)
 
+            accion = None
+            if estado != "error" and convenio_id is not None and periodo:
+                accion = "actualizar" if (convenio_id, _normalizar(periodo)) in ejecucion_existente else "crear"
+
             resultados.append(FilaCargaExcel(
                 fila_excel=d["numero_fila"],
                 convenio_id=convenio_id,
                 codigo=(info["codigo"] if info else d["codigo_excel"]),
                 periodo=periodo,
                 estado=estado,
+                accion=accion,
                 mensajes=mensajes or ["Todo en orden."],
             ))
 
@@ -601,5 +618,10 @@ async def cargar_excel_financiero(
         filas_con_advertencia=sum(1 for r in resultados if r.estado == "advertencia"),
         filas_con_error=sum(1 for r in resultados if r.estado == "error"),
         convenios_afectados=convenios_afectados,
+        # Mismo criterio que filas_aplicadas: cuenta filas del excel (antes
+        # de de-duplicar convenio+período repetido dentro del propio
+        # archivo), no filas netas escritas en la BD.
+        filas_nuevas=sum(1 for r in resultados if r.accion == "crear"),
+        filas_actualizadas=sum(1 for r in resultados if r.accion == "actualizar"),
     )
     return CargaExcelResponse(resumen=resumen, filas=resultados)
