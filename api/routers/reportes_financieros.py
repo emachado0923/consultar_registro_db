@@ -17,6 +17,7 @@ from ..models.reportes_financieros import (
     ReporteFinancieroResponse,
     ResumenCargaExcel,
     ResumenFinanciero,
+    UltimaActualizacionResponse,
 )
 from .seguimiento_auth import get_current_user_seguimiento, require_rol
 
@@ -578,12 +579,12 @@ async def cargar_excel_financiero(
                     (convenio_id, periodo, numero_rp, numero_cdp, valor_cdp,
                      estudiantes_postulados, estudiantes_conciliados, valor_conciliado,
                      valor_pagado_matricula, valor_pagado_complementarios, valor_pagado_ajuste,
-                     valor_pagado, valor_proyectado_periodo)
+                     valor_pagado, valor_proyectado_periodo, actualizado_en)
                 VALUES
                     (:convenio_id, :periodo, :numero_rp, :numero_cdp, :valor_cdp,
                      :estudiantes_postulados, :estudiantes_conciliados, :valor_conciliado,
                      :valor_pagado_matricula, :valor_pagado_complementarios, :valor_pagado_ajuste,
-                     :valor_pagado, :valor_proyectado_periodo)
+                     :valor_pagado, :valor_proyectado_periodo, NOW())
                 ON DUPLICATE KEY UPDATE
                     numero_rp = VALUES(numero_rp), numero_cdp = VALUES(numero_cdp), valor_cdp = VALUES(valor_cdp),
                     estudiantes_postulados = VALUES(estudiantes_postulados),
@@ -593,7 +594,8 @@ async def cargar_excel_financiero(
                     valor_pagado_complementarios = VALUES(valor_pagado_complementarios),
                     valor_pagado_ajuste = VALUES(valor_pagado_ajuste),
                     valor_pagado = VALUES(valor_pagado),
-                    valor_proyectado_periodo = VALUES(valor_proyectado_periodo)
+                    valor_proyectado_periodo = VALUES(valor_proyectado_periodo),
+                    actualizado_en = NOW()
             """)
             for d in por_clave.values():
                 conn.execute(stmt_upsert, {k: d[k] for k in (
@@ -625,3 +627,21 @@ async def cargar_excel_financiero(
         filas_actualizadas=sum(1 for r in resultados if r.accion == "actualizar"),
     )
     return CargaExcelResponse(resumen=resumen, filas=resultados)
+
+
+@router.get(
+    "/ultima-actualizacion",
+    response_model=UltimaActualizacionResponse,
+    summary="Fecha de la última carga de datos del módulo financiero",
+)
+def ultima_actualizacion_financiero(
+    _: Dict[str, Any] = Depends(get_current_user_seguimiento),
+) -> UltimaActualizacionResponse:
+    """A pedido de Migue: una tarjeta con la fecha de actualización de cada
+    uno de los 3 módulos del selector de apps. Acá, la fecha de la carga de
+    excel más reciente (ver `actualizado_en` — se pone explícitamente en
+    cada INSERT/UPDATE del upsert de /cargar-excel, así que refleja tanto
+    la primera carga como cualquier re-carga posterior)."""
+    with engine_analitica.connect() as conn:
+        fila = conn.execute(text("SELECT MAX(actualizado_en) AS fecha FROM convenio_ejecucion_financiera_mc")).mappings().fetchone()
+    return UltimaActualizacionResponse(fecha=fila["fecha"] if fila else None)

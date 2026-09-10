@@ -37,6 +37,7 @@ se pide el reporte:
     completo en vez de contra lo efectivamente presupuestado (CDP) hasta el
     momento.
 """
+from datetime import datetime
 from typing import List, Optional
 
 from pydantic import BaseModel
@@ -144,3 +145,13 @@ class ResumenCargaExcel(BaseModel):
 class CargaExcelResponse(BaseModel):
     resumen: ResumenCargaExcel
     filas: List[FilaCargaExcel]
+
+
+class UltimaActualizacionResponse(BaseModel):
+    """Ver GET /reportes-financieros/ultima-actualizacion — a pedido de
+    Migue, para la tarjeta de "fecha de actualización" de cada módulo en el
+    selector de apps. `fecha` = MAX(actualizado_en) de
+    convenio_ejecucion_financiera_mc (ver migración
+    2026-09_actualizado_en_ejecucion_financiera.sql) — None solo si la
+    tabla está completamente vacía (nunca se ha cargado ningún excel)."""
+    fecha: Optional[datetime] = None

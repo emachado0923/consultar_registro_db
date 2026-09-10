@@ -1,9 +1,9 @@
 from datetime import date, datetime
 from typing import Any, Dict, List
- 
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy import text
- 
+
 from ..core.database import engine_analitica
 from ..models.seguimiento_actividades import (
     ActividadPeriodoOut,
@@ -13,13 +13,14 @@ from ..models.seguimiento_actividades import (
     FechaLimiteSubcategoriaSet,
     NoAplicaRequest,
     RecordatorioUpdateRequest,
+    UltimaActualizacionResponse,
 )
 from .seguimiento_auth import get_current_user_seguimiento, require_rol
- 
+
 router = APIRouter(prefix="/seguimiento", tags=["Seguimiento · Actividades"])
- 
+
 TIPOS_VALIDOS = ("ejecucion", "liquidacion", "cierre")
- 
+
 # Cadena de transiciones automáticas de estado del convenio — idéntica a
 # app/seguimiento/ui.py::TRANSICION_ESTADO. 'ejecucion' NO está aquí a
 # propósito: ese paso lo dispara el flujo diario de n8n por fecha_fin_convenio.
@@ -27,20 +28,20 @@ TRANSICION_ESTADO = {
     "liquidacion": ("En liquidación", "En cierre"),
     "cierre": ("En cierre", "Cerrado"),
 }
- 
- 
+
+
 def _validar_tipo(tipo: str) -> None:
     if tipo not in TIPOS_VALIDOS:
         raise HTTPException(status_code=400, detail=f"tipo debe ser uno de {TIPOS_VALIDOS}")
- 
- 
+
+
 def _verificar_avance_automatico_convenio(convenio_id: int, tipo_actividad: str) -> AvanceResponse:
     """Réplica exacta de ui.py::_verificar_avance_automatico_convenio."""
     if tipo_actividad not in TRANSICION_ESTADO:
         return AvanceResponse(avanzo_estado_convenio=False)
- 
+
     estado_esperado, estado_siguiente = TRANSICION_ESTADO[tipo_actividad]
- 
+
     with engine_analitica.connect() as conn:
         conteo = conn.execute(
             text("""
@@ -56,15 +57,15 @@ def _verificar_avance_automatico_convenio(convenio_id: int, tipo_actividad: str)
             """),
             {"cid": convenio_id, "tipo": tipo_actividad},
         ).mappings().fetchone()
- 
+
         if not conteo:
             return AvanceResponse(avanzo_estado_convenio=False)
- 
+
         total_relevantes = conteo["total_relevantes"]
         completadas_relevantes = conteo["completadas_relevantes"]
         estado_actual = conteo["estado_actual"]
         codigo = conteo["codigo"]
- 
+
         if total_relevantes and completadas_relevantes == total_relevantes and estado_actual == estado_esperado:
             conn.execute(
                 text("UPDATE convenios_seg_proceso_mc SET estado=:estado WHERE id=:cid"),
@@ -72,10 +73,10 @@ def _verificar_avance_automatico_convenio(convenio_id: int, tipo_actividad: str)
             )
             conn.commit()
             return AvanceResponse(avanzo_estado_convenio=True, codigo_convenio=codigo, nuevo_estado_convenio=estado_siguiente)
- 
+
     return AvanceResponse(avanzo_estado_convenio=False)
- 
- 
+
+
 @router.get("/periodos/{periodo_id}/actividades", response_model=List[ActividadPeriodoOut], summary="Listar actividades de un período (por tipo)")
 def list_actividades_periodo(
     periodo_id: int,
@@ -103,7 +104,7 @@ def list_actividades_periodo(
             """),
             {"periodo_id": periodo_id, "tipo": tipo},
         ).mappings().all()
- 
+
     resultado = []
     for r in rows:
         d = dict(r)
@@ -112,8 +113,8 @@ def list_actividades_periodo(
         d["no_aplica"] = bool(d["no_aplica"])
         resultado.append(d)
     return resultado
- 
- 
+
+
 @router.patch("/actividades/{actividad_convenio_id}/avance", response_model=AvanceResponse, summary="Guardar avance de una actividad (equivalente a guardar_avance)")
 def update_avance(
     actividad_convenio_id: int,
@@ -122,9 +123,9 @@ def update_avance(
 ):
     if user.get("rol") == "DIRECTORA":
         raise HTTPException(status_code=403, detail="El rol Directora no puede editar actividades")
- 
+
     campos_enviados = data.dict(exclude_unset=True)
- 
+
     with engine_analitica.connect() as conn:
         prev = conn.execute(
             text("""
@@ -135,21 +136,21 @@ def update_avance(
         ).mappings().fetchone()
         if not prev:
             raise HTTPException(status_code=404, detail="Actividad no encontrada")
- 
+
         est_ant = prev["estado"] or "Pendiente"
         pct_ant = prev["porcentaje_avance"] or 0
         convenio_id = prev["convenio_id"]
         actividad_base_id = prev["actividad_base_id"]
         fecha_recordatorio_previa = prev["fecha_recordatorio"]
         nota_recordatorio_previa = prev["nota_recordatorio"]
- 
+
         tipo_actividad = None
         if actividad_base_id is not None:
             fila_tipo = conn.execute(
                 text("SELECT tipo FROM actividades_base_seg_mc WHERE id=:id"), {"id": actividad_base_id}
             ).mappings().fetchone()
             tipo_actividad = fila_tipo["tipo"] if fila_tipo else None
- 
+
         nuevo_pct = data.porcentaje_avance
         if nuevo_pct == 0:
             nuevo_estado = "Pendiente"
@@ -157,18 +158,18 @@ def update_avance(
             nuevo_estado = "Completada"
         else:
             nuevo_estado = "En curso"
- 
+
         fecha_completado = None
         if nuevo_estado == "Completada":
             fecha_completado = data.fecha_manual if data.fecha_manual else date.today()
- 
+
         # Si el caller no envió recordatorio explícitamente, se preserva el valor
         # ya guardado (igual que el formulario de Streamlit, que administra el
         # recordatorio aparte y solo reenvía el valor sin cambios).
         fecha_recordatorio = campos_enviados.get("fecha_recordatorio", fecha_recordatorio_previa)
         nota_recordatorio = campos_enviados.get("nota_recordatorio", nota_recordatorio_previa)
         recordatorio_enviado = 0 if fecha_recordatorio != fecha_recordatorio_previa else None
- 
+
         if recordatorio_enviado is None:
             conn.execute(
                 text("""
@@ -202,7 +203,7 @@ def update_avance(
                     "recordatorio_enviado": recordatorio_enviado, "id": actividad_convenio_id,
                 },
             )
- 
+
         conn.execute(
             text("""
                 INSERT INTO historial_actividades_seg_mc
@@ -216,21 +217,21 @@ def update_avance(
                 "comentario": data.comentario,
             },
         )
- 
+
         # Sincronizar fecha_firma_director_general con la actividad id=22.
         if actividad_base_id == 22 and convenio_id is not None:
             conn.execute(
                 text("UPDATE convenios_seg_proceso_mc SET fecha_firma_director_general=:f WHERE id=:cid"),
                 {"f": fecha_completado, "cid": convenio_id},
             )
- 
+
         conn.commit()
- 
+
     if convenio_id is None:
         return AvanceResponse(avanzo_estado_convenio=False)
     return _verificar_avance_automatico_convenio(convenio_id, tipo_actividad)
- 
- 
+
+
 @router.patch("/actividades/{actividad_convenio_id}/no-aplica", response_model=AvanceResponse, summary="Marcar/revertir 'No aplica' (equivalente a marcar_no_aplica)")
 def update_no_aplica(
     actividad_convenio_id: int,
@@ -239,7 +240,7 @@ def update_no_aplica(
 ):
     if user.get("rol") == "DIRECTORA":
         raise HTTPException(status_code=403, detail="El rol Directora no puede editar actividades")
- 
+
     with engine_analitica.connect() as conn:
         prev = conn.execute(
             text("""
@@ -250,19 +251,19 @@ def update_no_aplica(
         ).mappings().fetchone()
         if not prev:
             raise HTTPException(status_code=404, detail="Actividad no encontrada")
- 
+
         est_ant = prev["estado"] or "Pendiente"
         pct_ant = prev["porcentaje_avance"] or 0
         convenio_id = prev["convenio_id"]
         actividad_base_id = prev["actividad_base_id"]
- 
+
         tipo_actividad = None
         if actividad_base_id is not None:
             fila_tipo = conn.execute(
                 text("SELECT tipo FROM actividades_base_seg_mc WHERE id=:id"), {"id": actividad_base_id}
             ).mappings().fetchone()
             tipo_actividad = fila_tipo["tipo"] if fila_tipo else None
- 
+
         if data.no_aplica:
             nuevo_estado, nuevo_pct = "Completada", 100
             fecha_completado = date.today()
@@ -271,7 +272,7 @@ def update_no_aplica(
             nuevo_estado, nuevo_pct = "Pendiente", 0
             fecha_completado = None
             comentario = 'Se revirtió la marca de "No aplica".'
- 
+
         conn.execute(
             text("""
                 UPDATE actividades_convenio_seg_mc
@@ -298,20 +299,20 @@ def update_no_aplica(
                 "comentario": comentario,
             },
         )
- 
+
         if actividad_base_id == 22 and convenio_id is not None:
             conn.execute(
                 text("UPDATE convenios_seg_proceso_mc SET fecha_firma_director_general=:f WHERE id=:cid"),
                 {"f": fecha_completado, "cid": convenio_id},
             )
- 
+
         conn.commit()
- 
+
     if convenio_id is None:
         return AvanceResponse(avanzo_estado_convenio=False)
     return _verificar_avance_automatico_convenio(convenio_id, tipo_actividad)
- 
- 
+
+
 @router.patch("/actividades/{actividad_convenio_id}/recordatorio", summary="Guardar/desactivar el recordatorio por correo de una actividad")
 def update_recordatorio(
     actividad_convenio_id: int,
@@ -320,7 +321,7 @@ def update_recordatorio(
 ) -> Dict[str, Any]:
     if user.get("rol") == "DIRECTORA":
         raise HTTPException(status_code=403, detail="El rol Directora no puede editar actividades")
- 
+
     with engine_analitica.connect() as conn:
         prev = conn.execute(
             text("SELECT fecha_recordatorio, nota_recordatorio FROM actividades_convenio_seg_mc WHERE id=:id"),
@@ -328,11 +329,11 @@ def update_recordatorio(
         ).mappings().fetchone()
         if prev is None:
             raise HTTPException(status_code=404, detail="Actividad no encontrada")
- 
+
         fecha_previa = prev["fecha_recordatorio"]
         nota_previa = prev["nota_recordatorio"]
         cambio = (data.fecha_recordatorio != fecha_previa) or (data.nota_recordatorio != nota_previa)
- 
+
         if cambio:
             conn.execute(
                 text("""
@@ -352,10 +353,10 @@ def update_recordatorio(
                 {"fecha": data.fecha_recordatorio, "nota": data.nota_recordatorio, "id": actividad_convenio_id},
             )
         conn.commit()
- 
+
     return {"actualizado": cambio}
- 
- 
+
+
 @router.get("/convenios/{convenio_id}/historial", summary="Historial de comentarios de todos los períodos de un convenio")
 def get_historial_convenio(
     convenio_id: int,
@@ -372,7 +373,7 @@ def get_historial_convenio(
             """),
             {"cid": convenio_id},
         ).mappings().all()
- 
+
     historial: Dict[str, List[Dict[str, Any]]] = {}
     for r in rows:
         key = str(r["actividad_convenio_id"])
@@ -382,8 +383,8 @@ def get_historial_convenio(
             "comentario": r["comentario"],
         })
     return historial
- 
- 
+
+
 @router.get(
     "/periodos/{periodo_id}/fechas-limite",
     response_model=List[FechaLimiteSubcategoriaPublic],
@@ -403,8 +404,8 @@ def list_fechas_limite_periodo(
             {"pid": periodo_id},
         ).mappings().all()
     return [dict(r) for r in rows]
- 
- 
+
+
 @router.put(
     "/periodos/{periodo_id}/fechas-limite",
     response_model=FechaLimiteSubcategoriaPublic,
@@ -418,7 +419,7 @@ def set_fecha_limite_subcategoria(
     if user.get("rol") == "DIRECTORA":
         raise HTTPException(status_code=403, detail="El rol Directora no puede editar actividades")
     _validar_tipo(data.tipo)
- 
+
     ahora = datetime.now()
     with engine_analitica.connect() as conn:
         existe = conn.execute(
@@ -428,7 +429,7 @@ def set_fecha_limite_subcategoria(
             """),
             {"pid": periodo_id, "tipo": data.tipo, "subcategoria": data.subcategoria},
         ).fetchone()
- 
+
         if existe:
             # Reescribe fecha_definicion a "ahora" — el conteo de tercios se
             # reinicia cada vez que se cambia la fecha límite, no solo al
@@ -454,12 +455,12 @@ def set_fecha_limite_subcategoria(
                 },
             )
         conn.commit()
- 
+
     return FechaLimiteSubcategoriaPublic(
         tipo=data.tipo, subcategoria=data.subcategoria, fecha_limite=data.fecha_limite, fecha_definicion=ahora,
     )
- 
- 
+
+
 @router.delete(
     "/periodos/{periodo_id}/fechas-limite",
     summary="Quitar la fecha límite de una subcategoría (la barra vuelve a azul)",
@@ -472,7 +473,7 @@ def delete_fecha_limite_subcategoria(
 ):
     if user.get("rol") == "DIRECTORA":
         raise HTTPException(status_code=403, detail="El rol Directora no puede editar actividades")
- 
+
     with engine_analitica.connect() as conn:
         conn.execute(
             text("""
@@ -483,8 +484,8 @@ def delete_fecha_limite_subcategoria(
         )
         conn.commit()
     return {"status": "ok"}
- 
- 
+
+
 @router.get("/periodos/{periodo_id}/historial", summary="Historial de comentarios de un período específico")
 def get_historial_periodo(
     periodo_id: int,
@@ -501,7 +502,7 @@ def get_historial_periodo(
             """),
             {"pid": periodo_id},
         ).mappings().all()
- 
+
     historial: Dict[str, List[Dict[str, Any]]] = {}
     for r in rows:
         key = str(r["actividad_convenio_id"])
@@ -511,3 +512,24 @@ def get_historial_periodo(
             "comentario": r["comentario"],
         })
     return historial
+
+
+@router.get(
+    "/ultima-actualizacion",
+    response_model=UltimaActualizacionResponse,
+    summary="Fecha de la última actividad registrada en el módulo de Seguimiento",
+)
+def ultima_actualizacion_seguimiento(
+    _: Dict[str, Any] = Depends(get_current_user_seguimiento),
+) -> UltimaActualizacionResponse:
+    """A pedido de Migue: una tarjeta con la fecha de actualización de cada
+    uno de los 3 módulos del selector de apps. Acá no hay una "carga de
+    excel" como en Financiero — el dato de este módulo se actualiza
+    continuamente conforme los responsables marcan avance en las
+    actividades, así que la referencia natural es la actividad tocada más
+    recientemente (`ultima_actualizacion`, columna ya existente en
+    actividades_convenio_seg_mc, se mantiene sola a nivel de base de
+    datos)."""
+    with engine_analitica.connect() as conn:
+        fila = conn.execute(text("SELECT MAX(ultima_actualizacion) AS fecha FROM actividades_convenio_seg_mc")).mappings().fetchone()
+    return UltimaActualizacionResponse(fecha=fila["fecha"] if fila else None)

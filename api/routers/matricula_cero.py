@@ -6,7 +6,7 @@ from sqlalchemy import text
 from ..core.database import engine_analitica, engine_convocatoria
 from ..core.matricula_cero_helpers import calcular_periodo_label
 from ..models.consulta import ConsultaResponse
-from ..models.matricula_cero import InfoPersonalMCResponse
+from ..models.matricula_cero import InfoPersonalMCResponse, UltimaActualizacionTableroResponse
 from .seguimiento_auth import get_current_user_seguimiento
 
 router = APIRouter(prefix="/matricula-cero", tags=["Matrícula Cero"])
@@ -164,3 +164,21 @@ def tablero_giros(
         results = [r for r in results if str(r.get("periodo", "")) >= "2023-2"]
 
     return ConsultaResponse(count=len(results), results=results)
+
+
+@router.get(
+    "/tablero/ultima-actualizacion",
+    response_model=UltimaActualizacionTableroResponse,
+    summary="Fecha del cargue más reciente de datos históricos en el Tablero",
+)
+def ultima_actualizacion_tablero(
+    _: Dict[str, Any] = Depends(get_current_user_seguimiento),
+) -> UltimaActualizacionTableroResponse:
+    """A pedido de Migue: tarjeta de "fecha de actualización" para el
+    Tablero histórico. NO aplica a /consulta ni a /tablero/info-personal
+    (esas consultan convocatoria_sapiencia en tiempo real, sin cargue de
+    por medio) — solo al historial de mc_final, que sí se carga por
+    lotes."""
+    with engine_analitica.connect() as conn:
+        fila = conn.execute(text("SELECT MAX(fecha_cargue) AS fecha FROM analitica_fondos.mc_final")).mappings().fetchone()
+    return UltimaActualizacionTableroResponse(fecha=fila["fecha"] if fila else None)
