@@ -16,6 +16,15 @@ Fuentes:
     ya eliminada), el valor proyectado varía POR PERÍODO, así que a nivel de
     convenio se suma across todos sus períodos.
 
+valor_pagado_men ("Valor pagado por el MEN", columna nueva del excel
+"VALOR PAGADO MEN") sigue el mismo patrón de valor_ejecutado: existe por
+período (`PeriodoFinanciero`) y se agrega sumando across períodos tanto a
+nivel de convenio (`ConvenioFinanciero`) como en el consolidado de la
+selección (`ResumenFinanciero`) — a pedido de Migue, visible en los 3
+niveles. `observaciones` (columna nueva "OBSERVACIONES") es texto libre
+por período, sin agregación (no tiene sentido "sumar" observaciones) — solo
+vive en `PeriodoFinanciero`.
+
 Campos que NO se guardan en ninguna tabla porque son fórmulas de Excel
 recalculables, no dato real — se calculan aquí mismo, al vuelo, cada vez que
 se pide el reporte:
@@ -56,6 +65,7 @@ class ConvenioFinanciero(BaseModel):
     valor_cdp: float  # SUM(valor_cdp) de los períodos con datos — base del % de ejecución (valor)
     valor_ejecutado: float
     valor_proyectado: float
+    valor_pagado_men: float  # SUM(valor_pagado_men) de los períodos con datos
     valor_no_ejecutado: float  # valor_cdp - valor_ejecutado (antes: valor_total - valor_ejecutado)
     pct_ejecucion_valor: Optional[float] = None  # valor_ejecutado / valor_cdp; None si valor_cdp es 0
     pct_ejecucion_tiempo: Optional[float] = None  # None si faltan fecha_inicio/fecha_fin
@@ -77,9 +87,11 @@ class PeriodoFinanciero(BaseModel):
     valor_pagado_complementarios: Optional[float] = None
     valor_pagado_ajuste: Optional[float] = None
     valor_pagado: Optional[float] = None
+    valor_pagado_men: Optional[float] = None
     valor_proyectado_periodo: Optional[float] = None
     valor_no_ejecutado: Optional[float] = None  # = valor_cdp - valor_pagado (fórmula exacta del excel)
     pct_ejecucion_valor: Optional[float] = None  # = valor_pagado / valor_cdp (fórmula exacta del excel)
+    observaciones: Optional[str] = None
 
 
 class ResumenFinanciero(BaseModel):
@@ -87,6 +99,7 @@ class ResumenFinanciero(BaseModel):
     valor_cdp: float
     valor_ejecutado: float
     valor_proyectado: float
+    valor_pagado_men: float
     valor_no_ejecutado: float
     pct_ejecucion_valor: Optional[float] = None
     convenios: int
@@ -97,6 +110,11 @@ class ReporteFinancieroResponse(BaseModel):
     convenios: List[ConvenioFinanciero]
     opciones_ies: List[str]
     opciones_convenio: List[str]
+    # A pedido de Migue: filtro nuevo de período (además de IES/Convenio) —
+    # facetado con el mismo criterio que los otros 2 (calculado contra las
+    # OTRAS 2 dimensiones activas, nunca contra sí mismo). Ver
+    # `_construir_where` y el nuevo parámetro `periodo` en /resumen.
+    opciones_periodo: List[str]
 
 
 class FilaCargaExcel(BaseModel):

@@ -31,10 +31,28 @@ router = APIRouter(prefix="/reportes-financieros", tags=["Reportes Financieros"]
 # este router que escribe en la base.
 
 
-def _construir_where(ies: Optional[List[str]], convenio: Optional[List[str]]) -> Tuple[str, Dict[str, Any]]:
-    """Combina los 2 filtros (cada uno es una LISTA — se puede elegir varias
-    IES / varios convenios a la vez, combinados con AND entre dimensiones y
-    OR dentro de cada una)."""
+def _construir_where(
+    ies: Optional[List[str]],
+    convenio: Optional[List[str]],
+    periodo: Optional[List[str]] = None,
+) -> Tuple[str, Dict[str, Any]]:
+    """Combina los filtros (cada uno es una LISTA — se puede elegir varias
+    IES / varios convenios / varios períodos a la vez, combinados con AND
+    entre dimensiones y OR dentro de cada una).
+
+    `periodo` es distinto a `ies`/`convenio`: no es una columna directa de
+    `convenios_seg_proceso_mc`, así que se resuelve con un EXISTS contra
+    `convenio_periodos_seg_mc` (el registro de períodos que ya administra
+    Convenios) — un convenio pasa el filtro si tiene AL MENOS uno de los
+    períodos elegidos, sin importar si el financiero ya le cargó ejecución
+    para ese período o no (mismo criterio "estructural" que ya usa
+    `/convenios/{id}/periodos`, que muestra el período igual aunque esté
+    vacío). A pedido de Migue, este filtro además acota qué períodos se
+    muestran DENTRO de cada convenio (ver `periodo` en
+    `/convenios/{id}/periodos`) y qué datos se suman en el consolidado (ver
+    el `WHERE` que se agrega a la subconsulta de agregación en
+    `resumen_financiero`) — reutiliza el mismo bind `periodo_list` que se
+    arma acá."""
     clausulas = ["1=1"]
     binds: Dict[str, Any] = {}
     if ies:
@@ -43,6 +61,12 @@ def _construir_where(ies: Optional[List[str]], convenio: Optional[List[str]]) ->
     if convenio:
         clausulas.append("c.codigo IN :convenio_list")
         binds["convenio_list"] = tuple(convenio)
+    if periodo:
+        clausulas.append("""EXISTS (
+            SELECT 1 FROM convenio_periodos_seg_mc pp
+            WHERE pp.convenio_id = c.id AND UPPER(TRIM(pp.periodo)) IN :periodo_list
+        )""")
+        binds["periodo_list"] = tuple(p.strip().upper() for p in periodo)
     return " AND ".join(clausulas), binds
 
 
@@ -84,6 +108,12 @@ def _pct_ejecucion_tiempo(fecha_inicio, fecha_fin, hoy: date) -> Optional[float]
 def resumen_financiero(
     ies: Optional[List[str]] = Query(None, description="Una o varias IES (nombre exacto). Omitir = todas."),
     convenio: Optional[List[str]] = Query(None, description="Uno o varios códigos de convenio exactos. Omitir = todos."),
+    periodo: Optional[List[str]] = Query(
+        None,
+        description="Uno o varios períodos exactos (ej. '2026-1'). Omitir = todos los períodos de cada convenio. "
+        "Además de filtrar qué convenios aparecen, ACOTA los totales de este resumen (y los de "
+        "/convenios/{id}/periodos) a solo esos períodos — no a la vida completa del convenio.",
+    ),
     _: Dict[str, Any] = Depends(get_current_user_seguimiento),
 ) -> ReporteFinancieroResponse:
     """
@@ -99,8 +129,26 @@ def resumen_financiero(
     pct_ejecucion_valor y valor_no_ejecutado, igual que en el excel del
     financiero (ahí es por período: pagado/CDP; acá se suma el CDP de todos
     los períodos con datos y se compara contra el total pagado).
+    valor_pagado_men = SUM(valor_pagado_men) — mismo criterio de agregación
+    que valor_ejecutado.
+
+    Si se pasa `periodo`, las 4 sumas de arriba (y por lo tanto
+    valor_no_ejecutado/pct_ejecucion_valor) se calculan SOLO con las filas de
+    convenio_ejecucion_financiera_mc de esos períodos — no con la vida
+    completa del convenio — a pedido de Migue (el filtro de período "acota").
+    valor_total, adiciones_recursos y pct_ejecucion_tiempo NO cambian con
+    este filtro: son atributos del CONVENIO (el valor del contrato, sus
+    adiciones, sus fechas), no del período.
     """
-    where_sql, binds = _construir_where(ies, convenio)
+    where_sql, binds = _construir_where(ies, convenio, periodo)
+
+    # El filtro de período también restringe QUÉ FILAS se agregan en la
+    # subconsulta `e` (no solo qué convenios pasan el WHERE de afuera) —
+    # reutiliza el mismo bind `periodo_list` que ya arma `_construir_where`
+    # para el EXISTS de convenio_periodos_seg_mc.
+    periodo_where_agregacion = ""
+    if periodo:
+        periodo_where_agregacion = "WHERE UPPER(TRIM(periodo)) IN :periodo_list"
 
     with engine_analitica.connect() as conn:
         stmt = text(f"""
@@ -109,15 +157,18 @@ def resumen_financiero(
                    c.fecha_inicio_convenio, c.fecha_fin_convenio,
                    COALESCE(e.valor_ejecutado, 0) AS valor_ejecutado,
                    COALESCE(e.valor_proyectado, 0) AS valor_proyectado,
-                   COALESCE(e.valor_cdp, 0) AS valor_cdp
+                   COALESCE(e.valor_cdp, 0) AS valor_cdp,
+                   COALESCE(e.valor_pagado_men, 0) AS valor_pagado_men
             FROM convenios_seg_proceso_mc c
             JOIN ies_seg_proceso_mc i ON c.ies_id = i.id
             LEFT JOIN (
                 SELECT convenio_id,
                        SUM(valor_pagado) AS valor_ejecutado,
                        SUM(valor_proyectado_periodo) AS valor_proyectado,
-                       SUM(valor_cdp) AS valor_cdp
+                       SUM(valor_cdp) AS valor_cdp,
+                       SUM(valor_pagado_men) AS valor_pagado_men
                 FROM convenio_ejecucion_financiera_mc
+                {periodo_where_agregacion}
                 GROUP BY convenio_id
             ) e ON e.convenio_id = c.id
             WHERE {where_sql}
@@ -126,15 +177,14 @@ def resumen_financiero(
         stmt = stmt.bindparams(*_bindparams_expandibles(binds))
         filas = conn.execute(stmt, binds).mappings().all()
 
-        # Opciones "facetadas": las opciones de IES dependen del filtro de
-        # convenio activo (y viceversa), a pedido de Migue — si ya eligió una
-        # IES, el dropdown de Convenio solo debe ofrecer los convenios de esa
-        # IES, y si ya eligió un convenio, el dropdown de IES solo debe
-        # ofrecer la(s) IES de ese convenio. Cada lista se calcula con el
-        # filtro de LA OTRA dimensión únicamente (nunca con el propio: si ya
-        # elegiste 2 IES, esas 2 tienen que seguir apareciendo como opción,
-        # no desaparecer del propio dropdown).
-        where_ies, binds_ies = _construir_where(None, convenio)
+        # Opciones "facetadas": las opciones de IES/Convenio/Período dependen
+        # de las OTRAS 2 dimensiones activas (a pedido de Migue) — si ya
+        # eligió una IES, el dropdown de Convenio solo debe ofrecer los
+        # convenios de esa IES, y así con las 3 combinaciones. Cada lista se
+        # calcula con el filtro de las otras 2 dimensiones únicamente (nunca
+        # con la propia: si ya elegiste 2 IES, esas 2 tienen que seguir
+        # apareciendo como opción, no desaparecer del propio dropdown).
+        where_ies, binds_ies = _construir_where(None, convenio, periodo)
         stmt_ies = text(f"""
             SELECT DISTINCT i.nombre
             FROM ies_seg_proceso_mc i
@@ -145,7 +195,7 @@ def resumen_financiero(
         stmt_ies = stmt_ies.bindparams(*_bindparams_expandibles(binds_ies))
         opciones_ies = [r["nombre"] for r in conn.execute(stmt_ies, binds_ies).mappings().all()]
 
-        where_convenio, binds_convenio = _construir_where(ies, None)
+        where_convenio, binds_convenio = _construir_where(ies, None, periodo)
         stmt_convenio = text(f"""
             SELECT DISTINCT c.codigo
             FROM convenios_seg_proceso_mc c
@@ -156,6 +206,18 @@ def resumen_financiero(
         stmt_convenio = stmt_convenio.bindparams(*_bindparams_expandibles(binds_convenio))
         opciones_convenio = [r["codigo"] for r in conn.execute(stmt_convenio, binds_convenio).mappings().all()]
 
+        where_periodo, binds_periodo = _construir_where(ies, convenio, None)
+        stmt_periodo = text(f"""
+            SELECT DISTINCT p.periodo
+            FROM convenio_periodos_seg_mc p
+            JOIN convenios_seg_proceso_mc c ON c.id = p.convenio_id
+            JOIN ies_seg_proceso_mc i ON c.ies_id = i.id
+            WHERE {where_periodo}
+            ORDER BY p.periodo ASC
+        """)
+        stmt_periodo = stmt_periodo.bindparams(*_bindparams_expandibles(binds_periodo))
+        opciones_periodo = [r["periodo"] for r in conn.execute(stmt_periodo, binds_periodo).mappings().all()]
+
     hoy = date.today()
     convenios: List[ConvenioFinanciero] = []
     for f in filas:
@@ -163,6 +225,7 @@ def resumen_financiero(
         valor_ejecutado = float(f["valor_ejecutado"] or 0)
         valor_proyectado = float(f["valor_proyectado"] or 0)
         valor_cdp = float(f["valor_cdp"] or 0)
+        valor_pagado_men = float(f["valor_pagado_men"] or 0)
         convenios.append(
             ConvenioFinanciero(
                 convenio_id=f["convenio_id"],
@@ -176,6 +239,7 @@ def resumen_financiero(
                 valor_cdp=valor_cdp,
                 valor_ejecutado=valor_ejecutado,
                 valor_proyectado=valor_proyectado,
+                valor_pagado_men=valor_pagado_men,
                 valor_no_ejecutado=valor_cdp - valor_ejecutado,
                 pct_ejecucion_valor=_pct_ejecucion_valor(valor_ejecutado, valor_cdp),
                 pct_ejecucion_tiempo=_pct_ejecucion_tiempo(f["fecha_inicio_convenio"], f["fecha_fin_convenio"], hoy),
@@ -186,12 +250,14 @@ def resumen_financiero(
     total_cdp = sum(c.valor_cdp for c in convenios)
     total_ejecutado = sum(c.valor_ejecutado for c in convenios)
     total_proyectado = sum(c.valor_proyectado for c in convenios)
+    total_pagado_men = sum(c.valor_pagado_men for c in convenios)
 
     resumen = ResumenFinanciero(
         valor_total=total_valor,
         valor_cdp=total_cdp,
         valor_ejecutado=total_ejecutado,
         valor_proyectado=total_proyectado,
+        valor_pagado_men=total_pagado_men,
         valor_no_ejecutado=total_cdp - total_ejecutado,
         pct_ejecucion_valor=_pct_ejecucion_valor(total_ejecutado, total_cdp),
         convenios=len(convenios),
@@ -202,6 +268,7 @@ def resumen_financiero(
         convenios=convenios,
         opciones_ies=opciones_ies,
         opciones_convenio=opciones_convenio,
+        opciones_periodo=opciones_periodo,
     )
 
 
@@ -212,8 +279,20 @@ def resumen_financiero(
 )
 def periodos_financieros(
     convenio_id: int,
+    periodo: Optional[List[str]] = Query(
+        None,
+        description="Mismo filtro de período que /resumen — si se pasa, solo trae los períodos de este convenio "
+        "que coincidan (en vez de todos). Se pasa para que esta llamada quede consistente con lo que ya "
+        "filtró /resumen.",
+    ),
     _: Dict[str, Any] = Depends(get_current_user_seguimiento),
 ) -> List[PeriodoFinanciero]:
+    binds: Dict[str, Any] = {"cid": convenio_id}
+    clausula_periodo = ""
+    if periodo:
+        clausula_periodo = "AND UPPER(TRIM(p.periodo)) IN :periodo_list"
+        binds["periodo_list"] = tuple(x.strip().upper() for x in periodo)
+
     with engine_analitica.connect() as conn:
         existe = conn.execute(text("SELECT id FROM convenios_seg_proceso_mc WHERE id=:cid"), {"cid": convenio_id}).fetchone()
         if not existe:
@@ -224,21 +303,21 @@ def periodos_financieros(
         # período que ya existe en Seguimiento pero al que el financiero
         # todavía no le ha mandado datos aparece igual, con los campos de
         # ejecución en NULL, en vez de desaparecer de la lista.
-        filas = conn.execute(
-            text("""
-                SELECT p.periodo, e.numero_rp, e.numero_cdp, e.valor_cdp,
-                       e.estudiantes_postulados, e.estudiantes_conciliados, e.valor_conciliado,
-                       e.valor_pagado_matricula, e.valor_pagado_complementarios, e.valor_pagado_ajuste,
-                       e.valor_pagado, e.valor_proyectado_periodo
-                FROM convenio_periodos_seg_mc p
-                LEFT JOIN convenio_ejecucion_financiera_mc e
-                    ON e.convenio_id = p.convenio_id
-                    AND UPPER(TRIM(e.periodo)) = UPPER(TRIM(p.periodo))
-                WHERE p.convenio_id = :cid
-                ORDER BY p.orden, p.id
-            """),
-            {"cid": convenio_id},
-        ).mappings().all()
+        stmt = text(f"""
+            SELECT p.periodo, e.numero_rp, e.numero_cdp, e.valor_cdp,
+                   e.estudiantes_postulados, e.estudiantes_conciliados, e.valor_conciliado,
+                   e.valor_pagado_matricula, e.valor_pagado_complementarios, e.valor_pagado_ajuste,
+                   e.valor_pagado, e.valor_pagado_men, e.valor_proyectado_periodo, e.observaciones
+            FROM convenio_periodos_seg_mc p
+            LEFT JOIN convenio_ejecucion_financiera_mc e
+                ON e.convenio_id = p.convenio_id
+                AND UPPER(TRIM(e.periodo)) = UPPER(TRIM(p.periodo))
+            WHERE p.convenio_id = :cid {clausula_periodo}
+            ORDER BY p.orden, p.id
+        """)
+        if periodo:
+            stmt = stmt.bindparams(bindparam("periodo_list", expanding=True))
+        filas = conn.execute(stmt, binds).mappings().all()
 
     def _f(v):
         return float(v) if v is not None else None
@@ -268,9 +347,11 @@ def periodos_financieros(
                 valor_pagado_complementarios=_f(f["valor_pagado_complementarios"]),
                 valor_pagado_ajuste=_f(f["valor_pagado_ajuste"]),
                 valor_pagado=valor_pagado,
+                valor_pagado_men=_f(f["valor_pagado_men"]),
                 valor_proyectado_periodo=_f(f["valor_proyectado_periodo"]),
                 valor_no_ejecutado=valor_no_ejecutado,
                 pct_ejecucion_valor=_pct_ejecucion_valor(valor_pagado, valor_cdp),
+                observaciones=f["observaciones"] if f["observaciones"] not in (None, "") else None,
             )
         )
     return periodos
@@ -444,6 +525,12 @@ async def cargar_excel_financiero(
             "valor_pagado_complementarios": _limpiar_numero(col(fila, "COMPLEMENTARIOS")),
             "valor_pagado_ajuste": _limpiar_numero(col(fila, "AJUSTES 1,5")),
             "valor_pagado": _limpiar_numero(col(fila, "VALOR PAGADO")),
+            # 2 columnas nuevas a pedido de Migue — igual que el resto de
+            # columnas "opcionales" de este parser, si el excel todavía no
+            # las trae simplemente quedan en None fila por fila (no rompen
+            # la carga ni están en _COLUMNAS_REQUERIDAS).
+            "valor_pagado_men": _limpiar_numero(col(fila, "VALOR PAGADO MEN")),
+            "observaciones": _limpiar_texto(col(fila, "OBSERVACIONES")),
             "valor_proyectado_periodo": _limpiar_numero(col(fila, "VALOR PROYECTADO")),
             "adiciones_recursos": _limpiar_numero(col(fila, "ADICIONES DE RECURSOS")),
         })
@@ -579,12 +666,12 @@ async def cargar_excel_financiero(
                     (convenio_id, periodo, numero_rp, numero_cdp, valor_cdp,
                      estudiantes_postulados, estudiantes_conciliados, valor_conciliado,
                      valor_pagado_matricula, valor_pagado_complementarios, valor_pagado_ajuste,
-                     valor_pagado, valor_proyectado_periodo, actualizado_en)
+                     valor_pagado, valor_pagado_men, valor_proyectado_periodo, observaciones, actualizado_en)
                 VALUES
                     (:convenio_id, :periodo, :numero_rp, :numero_cdp, :valor_cdp,
                      :estudiantes_postulados, :estudiantes_conciliados, :valor_conciliado,
                      :valor_pagado_matricula, :valor_pagado_complementarios, :valor_pagado_ajuste,
-                     :valor_pagado, :valor_proyectado_periodo, NOW())
+                     :valor_pagado, :valor_pagado_men, :valor_proyectado_periodo, :observaciones, NOW())
                 ON DUPLICATE KEY UPDATE
                     numero_rp = VALUES(numero_rp), numero_cdp = VALUES(numero_cdp), valor_cdp = VALUES(valor_cdp),
                     estudiantes_postulados = VALUES(estudiantes_postulados),
@@ -594,7 +681,9 @@ async def cargar_excel_financiero(
                     valor_pagado_complementarios = VALUES(valor_pagado_complementarios),
                     valor_pagado_ajuste = VALUES(valor_pagado_ajuste),
                     valor_pagado = VALUES(valor_pagado),
+                    valor_pagado_men = VALUES(valor_pagado_men),
                     valor_proyectado_periodo = VALUES(valor_proyectado_periodo),
+                    observaciones = VALUES(observaciones),
                     actualizado_en = NOW()
             """)
             for d in por_clave.values():
@@ -602,7 +691,7 @@ async def cargar_excel_financiero(
                     "convenio_id", "periodo", "numero_rp", "numero_cdp", "valor_cdp",
                     "estudiantes_postulados", "estudiantes_conciliados", "valor_conciliado",
                     "valor_pagado_matricula", "valor_pagado_complementarios", "valor_pagado_ajuste",
-                    "valor_pagado", "valor_proyectado_periodo",
+                    "valor_pagado", "valor_pagado_men", "valor_proyectado_periodo", "observaciones",
                 )})
 
             for convenio_id, (monto, _fila) in adiciones_por_convenio.items():
