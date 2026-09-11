@@ -1,4 +1,5 @@
 import io
+import json
 from collections import Counter
 from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
@@ -260,6 +261,15 @@ async def cargar_mc_final(
                     f'(default: "{_SUBIR_COL_DEFAULT}"). Si el archivo no la tiene, no se excluye nada.',
     ),
     fecha_cargue: Optional[date] = Form(None, description="Fecha a guardar en fecha_cargue. Por defecto, hoy."),
+    resolver_reemplazar: Optional[str] = Form(
+        None,
+        description='JSON con una lista de `docperiodo` en "conflicto_ies" que el usuario decidió '
+                    'REEMPLAZAR con este archivo, ej. \'["123456782026-1"]\'. Cualquier conflicto de IES '
+                    "que NO esté en esta lista se deja intacto (comportamiento de siempre: se reporta, no "
+                    "se toca). Se puede mandar tanto en la previsualización como al confirmar — en ambas "
+                    "se recalcula la clasificación igual, así que la previsualización refleja exactamente "
+                    "lo que se va a aplicar.",
+    ),
     confirmar: bool = Form(False, description="false = solo valida y previsualiza; true = aplica los cambios"),
     _: Dict[str, Any] = Depends(require_rol("ADMIN", "AD")),
 ) -> CargaMcFinalResponse:
@@ -273,6 +283,19 @@ async def cargar_mc_final(
     salvo que la BD haya cambiado entre medio (ej. alguien más cargó otra
     IES justo en ese momento).
     """
+    docperiodos_reemplazar: set = set()
+    if resolver_reemplazar:
+        try:
+            parseado = json.loads(resolver_reemplazar)
+            if not isinstance(parseado, list):
+                raise ValueError("no es una lista")
+            docperiodos_reemplazar = {str(dp) for dp in parseado}
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=400,
+                detail="resolver_reemplazar debe ser un JSON de lista de docperiodo, ej. [\"123456782026-1\"].",
+            )
+
     contenido = await archivo.read()
     if len(contenido) > _MAX_BYTES_MC_FINAL:
         raise HTTPException(status_code=400, detail="El archivo supera el tamaño máximo permitido (30 MB).")
@@ -338,6 +361,9 @@ async def cargar_mc_final(
                 fila_excel=numero_fila,
                 documento=to_text(row.get("DOCUMENTO")),
                 ies=to_text(row.get("IES")),
+                # Sin docperiodo: esta fila se excluyó ANTES de mapear (no
+                # pasó por map_row), así que no hay un docperiodo calculado.
+                docperiodo=None,
                 tipo="excluida_manual",
                 mensaje=f"Excluida manualmente por columna '{subir_col}' = NO.",
             ))
@@ -388,6 +414,8 @@ async def cargar_mc_final(
                     fila_excel=numero_fila,
                     documento=None,
                     ies=to_text(row.get("IES")),
+                    # Sin documento no hay docperiodo posible.
+                    docperiodo=None,
                     tipo="invalida",
                     mensaje=str(e),
                 ))
@@ -401,6 +429,7 @@ async def cargar_mc_final(
                     fila_excel=numero_fila,
                     documento=mapeada["documento"],
                     ies=mapeada["ies"],
+                    docperiodo=mapeada["docperiodo"],
                     tipo="renueva_sin_historial",
                     mensaje="RENUEVA: no se encontró (o hay duplicados ambiguos para) su período anterior en "
                             "mc_final — semestre_ingreso/giros quedaron en 'NO ENCONTRADO'.",
@@ -420,6 +449,7 @@ async def cargar_mc_final(
                     fila_excel=numero_fila,
                     documento=mapeada["documento"],
                     ies=mapeada["ies"],
+                    docperiodo=mapeada["docperiodo"],
                     tipo="duplicado_en_archivo",
                     mensaje=f"El documento+período aparece {conteo_en_archivo[mapeada['docperiodo']]} veces en "
                             "este mismo archivo — ninguna de esas filas se aplicó, corrige el archivo y vuelve a "
@@ -454,6 +484,7 @@ async def cargar_mc_final(
                 existing_ies[r["docperiodo"]] = r["ies"]
 
         filas_conflicto_ies: List[FilaProblemaMcFinal] = []
+        filas_conflicto_ies_resueltas: List[FilaProblemaMcFinal] = []
         filas_docperiodo_ambiguo: List[FilaProblemaMcFinal] = []
         filas_para_aplicar: List[Tuple[int, Dict[str, Any], str]] = []
         for numero_fila, mapeada in filas_candidatas:
@@ -465,21 +496,40 @@ async def cargar_mc_final(
                 ies_actual = existing_ies.get(dp)
                 if normalize_text(ies_actual) == normalize_text(mapeada["ies"]):
                     filas_para_aplicar.append((numero_fila, mapeada, "actualizar"))
+                elif dp in docperiodos_reemplazar:
+                    # A pedido de Migue: resuelve el conflicto ahí mismo —
+                    # se aplica como cualquier actualización normal (pisa
+                    # TODAS las columnas, incluida `ies`, con este archivo),
+                    # pero sigue apareciendo en `problemas` (resuelto=True)
+                    # para que quede visible qué se decidió.
+                    filas_para_aplicar.append((numero_fila, mapeada, "actualizar"))
+                    filas_conflicto_ies_resueltas.append(FilaProblemaMcFinal(
+                        fila_excel=numero_fila,
+                        documento=mapeada["documento"],
+                        ies=mapeada["ies"],
+                        docperiodo=dp,
+                        tipo="conflicto_ies",
+                        resuelto=True,
+                        mensaje=f"Existía bajo la IES '{ies_actual}' — resuelto: se reemplazó por "
+                                f"'{mapeada['ies']}' (este archivo), según lo elegido antes de confirmar.",
+                    ))
                 else:
                     filas_conflicto_ies.append(FilaProblemaMcFinal(
                         fila_excel=numero_fila,
                         documento=mapeada["documento"],
                         ies=mapeada["ies"],
+                        docperiodo=dp,
                         tipo="conflicto_ies",
                         mensaje=f"Ya existe en mc_final bajo la IES '{ies_actual}'; este archivo trae "
-                                f"'{mapeada['ies']}'. No se sobrescribió — decide manualmente cuál IES es la "
-                                "correcta.",
+                                f"'{mapeada['ies']}'. No se sobrescribió — elige \"Reemplazar\" arriba si "
+                                "quieres que este archivo la reemplace, o déjala así para mantener la existente.",
                     ))
             else:
                 filas_docperiodo_ambiguo.append(FilaProblemaMcFinal(
                     fila_excel=numero_fila,
                     documento=mapeada["documento"],
                     ies=mapeada["ies"],
+                    docperiodo=dp,
                     tipo="docperiodo_ambiguo",
                     mensaje=f"Ya existe {n_existentes} veces en mc_final (duplicado histórico) — no se tocó, "
                             "revisa manualmente.",
@@ -517,7 +567,8 @@ async def cargar_mc_final(
 
     problemas = (
         filas_excluidas + filas_invalidas + filas_duplicadas_en_archivo
-        + filas_conflicto_ies + filas_docperiodo_ambiguo + filas_renueva_sin_historial
+        + filas_conflicto_ies + filas_conflicto_ies_resueltas + filas_docperiodo_ambiguo
+        + filas_renueva_sin_historial
     )
     problemas.sort(key=lambda f: f.fila_excel)
 
@@ -532,6 +583,7 @@ async def cargar_mc_final(
         filas_actualizan=sum(1 for _, _, accion in filas_para_aplicar if accion == "actualizar"),
         filas_duplicadas_en_archivo=len(filas_duplicadas_en_archivo),
         filas_conflicto_ies=len(filas_conflicto_ies),
+        filas_conflicto_ies_resueltas=len(filas_conflicto_ies_resueltas),
         filas_docperiodo_ambiguo=len(filas_docperiodo_ambiguo),
         filas_renueva_sin_historial=len(filas_renueva_sin_historial),
         filas_aplicadas=filas_aplicadas,
