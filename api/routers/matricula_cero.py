@@ -521,8 +521,9 @@ async def cargar_mc_final(
                         docperiodo=dp,
                         tipo="conflicto_ies",
                         mensaje=f"Ya existe en mc_final bajo la IES '{ies_actual}'; este archivo trae "
-                                f"'{mapeada['ies']}'. No se sobrescribió — elige \"Reemplazar\" arriba si "
-                                "quieres que este archivo la reemplace, o déjala así para mantener la existente.",
+                                f"'{mapeada['ies']}'. No se sobrescribió — marca \"Reemplazar con este archivo\" "
+                                "en la columna Acción (a la derecha, en esta misma fila) si quieres que este "
+                                "archivo la reemplace, o déjala sin marcar para mantener la existente.",
                     ))
             else:
                 filas_docperiodo_ambiguo.append(FilaProblemaMcFinal(
