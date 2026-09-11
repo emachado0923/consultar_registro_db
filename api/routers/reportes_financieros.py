@@ -117,8 +117,11 @@ def resumen_financiero(
     _: Dict[str, Any] = Depends(get_current_user_seguimiento),
 ) -> ReporteFinancieroResponse:
     """
-    valor_total = convenios_seg_proceso_mc.valor (confirmado con Migue que ya
-    cubre "valor total del contrato", no hace falta pedírselo al financiero).
+    valor_total = convenios_seg_proceso_mc.valor_inicial (columna renombrada
+    por Migue; antes se llamaba `valor`. Confirmado con Migue que ya cubre
+    "valor total del contrato", no hace falta pedírselo al financiero. El
+    campo de la API/JSON sigue llamándose `valor_total` sin cambios — acá
+    solo cambió de dónde se lee en la base, vía `AS valor` en el SELECT).
     valor_ejecutado = SUM(valor_pagado) de convenio_ejecucion_financiera_mc
     para ese convenio (confirmado con Migue: lo que realmente salió de caja).
     valor_proyectado = SUM(valor_proyectado_periodo) — se suma across todos
@@ -153,7 +156,7 @@ def resumen_financiero(
     with engine_analitica.connect() as conn:
         stmt = text(f"""
             SELECT c.id AS convenio_id, c.codigo, i.nombre AS ies_nombre, i.sigla AS ies_sigla,
-                   c.periodo_academico, c.estado, c.valor, c.adiciones_recursos,
+                   c.periodo_academico, c.estado, c.valor_inicial AS valor, c.adiciones_recursos,
                    c.fecha_inicio_convenio, c.fecha_fin_convenio,
                    COALESCE(e.valor_ejecutado, 0) AS valor_ejecutado,
                    COALESCE(e.valor_proyectado, 0) AS valor_proyectado,

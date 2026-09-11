@@ -4,10 +4,13 @@ tarjeta del selector de apps, junto a Consulta+Tablero y Seguimiento
 Convenios MC).
 
 Fuentes:
-  - convenios_seg_proceso_mc: valor total del contrato (columna `valor`,
+  - convenios_seg_proceso_mc: valor total del contrato (columna
+    `valor_inicial`, renombrada por Migue — antes se llamaba `valor`;
     confirmado con Migue que ya cubre "valor total"), adiciones_recursos
     (modificaciones al contrato), fechas de inicio/fin (para "% ejecución
-    tiempo").
+    tiempo"). El campo `valor_total` de la API/JSON no cambió de nombre,
+    solo cambió de qué columna se lee (vía `AS valor` en el SELECT del
+    router).
   - convenio_ejecucion_financiera_mc: ejecución por período que envía el
     financiero. "valor ejecutado" = SUM(valor_pagado) (confirmado con
     Migue: lo que realmente salió de caja, no el CDP reservado ni el valor

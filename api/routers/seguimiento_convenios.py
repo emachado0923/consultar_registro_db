@@ -75,7 +75,7 @@ def list_convenios(
     rows = session.exec(
         text("""
             SELECT c.id, c.codigo, i.nombre AS ies_nombre, i.sigla AS ies_sigla,
-                   c.periodo_academico, c.estado, c.valor, c.adiciones_recursos,
+                   c.periodo_academico, c.estado, c.valor_inicial AS valor, c.adiciones_recursos,
                    c.fecha_limite_liquidacion_voluntaria, c.fecha_limite_liquidacion_unilateral,
                    c.fecha_limite_liquidacion_judicial, c.fecha_vencimiento_poliza,
                    c.supervisor, c.apoyo_supervision, c.fecha_firma_director_general
@@ -118,7 +118,7 @@ def create_convenio(
             result = conn.execute(
                 text("""
                     INSERT INTO convenios_seg_proceso_mc
-                        (codigo, ies_id, periodo_academico, estado, valor,
+                        (codigo, ies_id, periodo_academico, estado, valor_inicial,
                          fecha_inicio_convenio, fecha_fin_convenio,
                          fecha_limite_liquidacion_voluntaria, fecha_limite_liquidacion_unilateral,
                          fecha_limite_liquidacion_judicial, fecha_vencimiento_poliza,
@@ -174,7 +174,7 @@ def get_convenio_detalle(
         row = conn.execute(
             text("""
                 SELECT c.id, c.codigo, i.nombre AS ies_nombre, i.sigla AS ies_sigla,
-                       c.periodo_academico, c.estado, c.valor, c.adiciones_recursos,
+                       c.periodo_academico, c.estado, c.valor_inicial AS valor, c.adiciones_recursos,
                        c.fecha_inicio_convenio, c.fecha_fin_convenio,
                        c.fecha_limite_liquidacion_voluntaria, c.fecha_limite_liquidacion_unilateral,
                        c.fecha_limite_liquidacion_judicial, c.fecha_vencimiento_poliza,
@@ -235,6 +235,15 @@ def update_convenio(
     campos = data.dict(exclude_unset=True)
     if not campos:
         raise HTTPException(status_code=400, detail="No se enviaron campos para actualizar")
+
+    # El campo de la API/JSON se sigue llamando "valor" a propósito (ver
+    # ConvenioSeguimientoUpdate), pero la columna real en la base ahora es
+    # `valor_inicial` (renombrada por Migue). Como set_clause se arma
+    # dinámicamente a partir de las claves de `campos`, hay que traducir
+    # el nombre acá ANTES de construir el SQL, o el UPDATE fallaría contra
+    # una columna `valor` que ya no existe.
+    if "valor" in campos:
+        campos["valor_inicial"] = campos.pop("valor")
 
     with engine_analitica.connect() as conn:
         actual = conn.execute(
